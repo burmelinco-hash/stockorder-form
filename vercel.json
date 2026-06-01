@@ -2,7 +2,7 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "routes": [
-    { "src": "/employee", "dest": "/employee.html" },
+    { "src": "/employee", "dest": "/Employee.html" },
     { "src": "/",         "dest": "/index.html" }
   ]
 }
