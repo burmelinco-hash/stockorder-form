@@ -11,3 +11,7 @@ npm-debug.log*
 Thumbs.db
 *.log
 .vscode/
+
+# Local dev helpers / harness
+.claude/
+_apitest.mjs
