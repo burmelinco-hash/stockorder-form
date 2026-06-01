@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Order Form</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;min-height:100vh;padding:30px 16px;color:#222}
+.container{max-width:680px;margin:0 auto}
+header{text-align:center;margin-bottom:28px}
+header h1{font-size:1.7rem;color:#1a1a2e;font-weight:700}
+header p{color:#666;margin-top:6px;font-size:0.93rem}
+.card{background:#fff;border-radius:14px;padding:26px;box-shadow:0 2px 12px rgba(0,0,0,.08);margin-bottom:20px}
+.card h2{font-size:1rem;font-weight:700;color:#1a1a2e;margin-bottom:18px;padding-bottom:10px;border-bottom:2px solid #f0f2f5;text-transform:uppercase;letter-spacing:.04em}
+.form-group{margin-bottom:16px}
+label{display:block;font-size:.82rem;font-weight:600;color:#555;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
+input[type=text],input[type=email],input[type=tel],input[type=number],select,textarea{width:100%;padding:11px 13px;border:2px solid #e2e8f0;border-radius:8px;font-size:.97rem;color:#222;background:#fafafa;transition:border-color .2s;font-family:inherit}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#4f46e5;background:#fff}
+select:disabled{opacity:.45;cursor:not-allowed}
+textarea{resize:vertical;min-height:70px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.avail-box{margin:16px 0 14px;padding:13px 16px;border-radius:10px;font-size:.92rem;font-weight:500;display:flex;align-items:center;gap:9px}
+.avail-box.idle{background:#f8fafc;border:2px solid #cbd5e1;color:#64748b;display:flex}
+.avail-box.ok{background:#f0fdf4;border:2px solid #22c55e;color:#15803d;display:flex}
+.avail-box.no{background:#fef2f2;border:2px solid #ef4444;color:#b91c1c;display:flex}
+.avail-icon{font-size:1.25rem;flex-shrink:0}
+.btn-add{width:100%;padding:13px;background:#4f46e5;color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:600;cursor:pointer;transition:background .2s,transform .1s}
+.btn-add:hover{background:#4338ca;transform:translateY(-1px)}
+.btn-add:disabled{background:#94a3b8;cursor:not-allowed;transform:none}
+/* Cart */
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+thead th{background:#f8fafc;padding:9px 12px;text-align:left;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:#888;border-bottom:2px solid #e2e8f0}
+tbody td{padding:10px 12px;border-bottom:1px solid #f0f2f5;color:#333}
+tbody tr:last-child td{border-bottom:none}
+.btn-rm{background:none;border:none;color:#ef4444;cursor:pointer;font-size:.95rem;padding:2px 6px;border-radius:4px}
+.btn-rm:hover{background:#fef2f2}
+.total-row td{font-weight:700;background:#f8fafc;border-top:2px solid #e2e8f0!important}
+.empty-msg{text-align:center;color:#bbb;padding:18px 0;font-size:.92rem}
+/* Submit area */
+.btn-submit{width:100%;padding:15px;background:#16a34a;color:#fff;border:none;border-radius:12px;font-size:1.05rem;font-weight:700;cursor:pointer;transition:background .2s,transform .1s;margin-top:6px}
+.btn-submit:hover{background:#15803d;transform:translateY(-1px)}
+.btn-submit:disabled{background:#94a3b8;cursor:not-allowed;transform:none}
+/* Success screen */
+#success-screen{display:none;text-align:center;padding:40px 20px}
+.success-icon{font-size:3.5rem;margin-bottom:16px}
+#success-screen h2{font-size:1.5rem;color:#15803d;margin-bottom:10px}
+#success-screen p{color:#555;margin-bottom:6px;font-size:.95rem}
+.order-id-badge{display:inline-block;background:#f0fdf4;border:2px solid #22c55e;color:#15803d;padding:8px 20px;border-radius:8px;font-weight:700;font-size:1rem;margin:12px 0}
+.btn-new{background:none;border:2px solid #4f46e5;color:#4f46e5;padding:10px 24px;border-radius:8px;font-size:.95rem;font-weight:600;cursor:pointer;margin-top:16px;transition:.2s}
+.btn-new:hover{background:#4f46e5;color:#fff}
+.loading-bar{display:none;text-align:center;padding:12px;color:#4f46e5;font-weight:500;font-size:.93rem}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid #c7d2fe;border-top-color:#4f46e5;border-radius:50%;animation:spin .7s linear infinite;margin-right:8px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:480px){.row2{grid-template-columns:1fr}}
+/* PDF overlay */
+.btn-pdf{background:#16a34a;border:none;color:#fff;padding:13px 24px;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer;margin-top:14px;transition:.2s;display:block;width:100%}
+.btn-pdf:hover{background:#15803d}
+#pdf-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:9999;overflow-y:auto;color-scheme:light}
+#pdf-overlay-inner{max-width:600px;margin:0 auto;padding:20px;color:#000;background:#fff;color-scheme:light}
+.pdf-toolbar{position:sticky;top:0;background:#1a1a2e;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;color-scheme:dark}
+.pdf-close{background:none;border:1px solid rgba(255,255,255,.4);color:#fff!important;padding:6px 14px;border-radius:6px;font-size:.85rem;cursor:pointer}
+@media print{
+  body>*:not(#pdf-overlay){display:none!important}
+  #pdf-overlay{display:block!important;position:static!important;height:auto!important;overflow:visible!important;background:#fff!important;z-index:auto!important;color-scheme:light!important}
+  #pdf-overlay-inner{padding:0!important}
+  .pdf-toolbar{display:none!important}
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1 id="biz-name">Order Form</h1>
+    <p>Fill in your details and select the items you want to order</p>
+  </header>
+
+  <!-- ── MAIN FORM ── -->
+  <div id="main-form">
+
+    <!-- Customer Info -->
+    <div class="card">
+      <h2>Your Information</h2>
+      <div class="form-group">
+        <label for="cust-name">Full Name *</label>
+        <input type="text" id="cust-name" placeholder="John Smith" required>
+      </div>
+      <div class="form-group">
+        <label for="cust-phone">Phone (optional)</label>
+        <input type="tel" id="cust-phone" placeholder="+66 xx xxx xxxx">
+      </div>
+      <div class="form-group">
+        <label for="cust-notes">Notes / Special requests</label>
+        <textarea id="cust-notes" placeholder="Any special instructions..."></textarea>
+      </div>
+    </div>
+
+    <!-- Product Selection -->
+    <div class="card">
+      <h2>Add Items</h2>
+      <div class="form-group" style="position:relative">
+        <label for="prod-search">Search Product ID</label>
+        <input type="text" id="prod-search" placeholder="Type product ID e.g. B01, F1165…" autocomplete="off" style="border-radius:8px">
+        <div id="prod-suggestions" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:2px solid #4f46e5;border-top:none;border-radius:0 0 10px 10px;max-height:200px;overflow-y:auto;z-index:99;box-shadow:0 6px 16px rgba(0,0,0,.12)"></div>
+      </div>
+      <div class="form-group">
+        <label for="sel-product">Or browse by category</label>
+        <select id="sel-product">
+          <option value="">— Choose a product —</option>
+        </select>
+      </div>
+      <div class="row2">
+        <div class="form-group">
+          <label for="sel-color">Color</label>
+          <select id="sel-color" disabled>
+            <option value="">— Choose color —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="sel-size">Size</label>
+          <select id="sel-size" disabled>
+            <option value="">— Choose size —</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="inp-qty">Quantity</label>
+        <input type="number" id="inp-qty" value="1" min="1" max="999" style="max-width:120px">
+      </div>
+
+      <div class="avail-box idle" id="avail-box">
+        <span class="avail-icon">ℹ️</span>
+        <span id="avail-text">Select product, color and size to check availability.</span>
+      </div>
+      <button class="btn-add" id="btn-add" style="display:none">＋ Add to Order</button>
+    </div>
+
+    <!-- Cart -->
+    <div class="card">
+      <h2>Order Summary <span id="cart-count" style="font-size:.8rem;background:#4f46e5;color:#fff;border-radius:20px;padding:2px 9px;margin-left:6px;display:none">0</span></h2>
+      <div id="cart-wrap"><p class="empty-msg">No items added yet.</p></div>
+    </div>
+
+    <!-- Submit -->
+    <div class="card">
+      <div id="submit-error" style="color:#b91c1c;margin-bottom:12px;display:none;font-size:.9rem"></div>
+      <div class="loading-bar" id="loading-bar"><span class="spinner"></span>Submitting your order…</div>
+      <button class="btn-submit" id="btn-submit">Submit Order</button>
+    </div>
+
+  </div><!-- /main-form -->
+
+  <!-- ── SUCCESS SCREEN ── -->
+  <div id="success-screen" class="card">
+    <div class="success-icon">🎉</div>
+    <h2>Order Received!</h2>
+    <div class="order-id-badge" id="order-id-display"></div>
+    <p>Thank you! We've received your order.</p>
+    <p style="margin-top:12px;color:#888;font-size:.88rem">We'll prepare your items and be in touch shortly.</p>
+    <button class="btn-pdf" onclick="saveOrderPdf()">📄 Save Order as PDF</button>
+    <button class="btn-new" onclick="resetForm()">Place Another Order</button>
+  </div>
+
+</div><!-- /container -->
+
+<!-- PDF overlay — full screen, user uses browser Share > Print -->
+<div id="pdf-overlay">
+  <div class="pdf-toolbar">
+    <button onclick="window.print()" style="background:#4f46e5;border:none;color:#fff;padding:8px 20px;border-radius:8px;font-size:.92rem;font-weight:700;cursor:pointer">🖨 Print / Save PDF</button>
+    <button class="pdf-close" onclick="document.getElementById('pdf-overlay').style.display='none'">✕ Close</button>
+  </div>
+  <div id="pdf-overlay-inner"></div>
+</div>
+
+<script>
+// ─── STATE ────────────────────────────────────────────────────
+var INVENTORY  = {};   // loaded live from Google Sheet
+var GROUPS     = [];   // loaded live from Google Sheet
+var cart       = [];
+var nextId     = 1;
+var lastOrder  = null; // stores last submitted order for PDF
+
+// ─── DOM ──────────────────────────────────────────────────────
+var selProd  = document.getElementById('sel-product');
+var selColor = document.getElementById('sel-color');
+var selSize  = document.getElementById('sel-size');
+var inpQty   = document.getElementById('inp-qty');
+var availBox = document.getElementById('avail-box');
+var availTxt = document.getElementById('avail-text');
+var btnAdd   = document.getElementById('btn-add');
+
+// ─── INIT ─────────────────────────────────────────────────────
+// Show loading state while we fetch live inventory from Google Sheet
+selProd.innerHTML = '<option value="">⏳ Loading products…</option>';
+selProd.disabled = true;
+
+try {
+  google.script.run.withSuccessHandler(function(name) {
+    if (name) {
+      document.getElementById('biz-name').textContent = name;
+      document.title = 'Order Form — ' + name;
+    }
+  }).getBusinessName();
+} catch(e) {}
+
+try {
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result && result.success) {
+        INVENTORY = result.inventory;
+        GROUPS    = result.groups;
+        buildProductDropdown();
+      } else {
+        selProd.innerHTML = '<option value="">⚠ Could not load products — please refresh</option>';
+      }
+    })
+    .withFailureHandler(function() {
+      selProd.innerHTML = '<option value="">⚠ Could not load products — please refresh</option>';
+    })
+    .getInventory();
+} catch(e) {
+  selProd.innerHTML = '<option value="">— Choose a product —</option>';
+  selProd.disabled = false;
+}
+
+// ─── PRODUCT SEARCH ──────────────────────────────────────────
+var prodSearchEl = document.getElementById('prod-search');
+var prodSuggest  = document.getElementById('prod-suggestions');
+
+prodSearchEl.addEventListener('input', function() {
+  var q = this.value.trim().toLowerCase();
+  prodSuggest.innerHTML = '';
+  if (!q) { prodSuggest.style.display = 'none'; return; }
+
+  var matches = Object.keys(INVENTORY).filter(function(p) {
+    return p.toLowerCase().indexOf(q) !== -1;
+  });
+
+  if (matches.length === 0) { prodSuggest.style.display = 'none'; return; }
+
+  matches.forEach(function(p) {
+    var div = document.createElement('div');
+    div.textContent = p;
+    div.style.cssText = 'padding:10px 14px;cursor:pointer;font-size:.95rem;border-bottom:1px solid #f0f2f5;color:#1a1a2e';
+    div.addEventListener('mousedown', function(e) {
+      e.preventDefault(); // prevent blur before click
+      selectProduct(p);
+      prodSearchEl.value = p;
+      prodSuggest.style.display = 'none';
+    });
+    div.addEventListener('mouseover',  function() { this.style.background = '#f0f2f5'; });
+    div.addEventListener('mouseout',   function() { this.style.background = '#fff'; });
+    prodSuggest.appendChild(div);
+  });
+  prodSuggest.style.display = 'block';
+});
+
+prodSearchEl.addEventListener('blur', function() {
+  setTimeout(function() { prodSuggest.style.display = 'none'; }, 150);
+});
+
+function selectProduct(prod) {
+  if (!INVENTORY[prod]) return;
+  selProd.value = prod;
+  resetColor(); resetSize(); hideAvail(); btnAdd.style.display = 'none';
+  var colors = Object.keys(INVENTORY[prod]).filter(function(c) {
+    return Object.keys(INVENTORY[prod][c]).some(function(s) { return INVENTORY[prod][c][s] > 0; });
+  });
+  selColor.innerHTML = '<option value="">— Choose color —</option>';
+  colors.forEach(function(c) {
+    var o = document.createElement('option'); o.value = c; o.textContent = c; selColor.appendChild(o);
+  });
+  selColor.disabled = false;
+  // Scroll down to color
+  selColor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function buildProductDropdown() {
+  selProd.innerHTML = '<option value="">— Choose a product —</option>';
+  GROUPS.forEach(function(g) {
+    var og = document.createElement('optgroup');
+    og.label = g.label;
+    g.products.forEach(function(p) {
+      if (!INVENTORY[p]) return;
+      var opt = document.createElement('option');
+      opt.value = p; opt.textContent = p;
+      og.appendChild(opt);
+    });
+    if (og.childElementCount > 0) selProd.appendChild(og);
+  });
+  selProd.disabled = false;
+}
+
+// ─── EVENTS ───────────────────────────────────────────────────
+selProd.addEventListener('change', function() {
+  var prod = selProd.value;
+  resetColor(); resetSize(); hideAvail(); btnAdd.style.display='none';
+  if (prodSearchEl) prodSearchEl.value = prod || '';
+  if (!prod) return;
+  // Only show colors that have at least one size in stock
+  var colors = Object.keys(INVENTORY[prod]).filter(function(c) {
+    var sizes = INVENTORY[prod][c];
+    return Object.keys(sizes).some(function(s) { return sizes[s] > 0; });
+  });
+  selColor.innerHTML = '<option value="">— Choose color —</option>';
+  colors.forEach(function(c) {
+    var o = document.createElement('option'); o.value=c; o.textContent=c; selColor.appendChild(o);
+  });
+  selColor.disabled = false;
+});
+
+selColor.addEventListener('change', function() {
+  var prod=selProd.value, color=selColor.value;
+  resetSize(); hideAvail(); btnAdd.style.display='none';
+  if (!prod||!color) return;
+  // Only show sizes with stock > 0
+  var sizes = Object.keys(INVENTORY[prod][color]).filter(function(s) {
+    return INVENTORY[prod][color][s] > 0;
+  });
+  selSize.innerHTML = '<option value="">— Choose size —</option>';
+  sizes.forEach(function(s) {
+    var o = document.createElement('option'); o.value=s; o.textContent=s; selSize.appendChild(o);
+  });
+  selSize.disabled = false;
+});
+
+selSize.addEventListener('change', checkAvail);
+
+// How many of the current selection are already sitting in the cart
+function qtyInCart(prod, color, size) {
+  var item = cart.find(function(i){ return i.product===prod&&i.color===color&&i.size===size; });
+  return item ? item.qty : 0;
+}
+
+function checkAvail() {
+  var prod=selProd.value, color=selColor.value, size=selSize.value;
+  if (!prod||!color||!size) { hideAvail(); btnAdd.style.display='none'; return; }
+  var stock = (INVENTORY[prod]&&INVENTORY[prod][color]) ? INVENTORY[prod][color][size] : undefined;
+  availBox.className = 'avail-box';
+
+  if (stock === undefined) {
+    availBox.classList.add('idle'); availTxt.textContent='This combination is not in inventory.';
+    btnAdd.style.display='none'; return;
+  }
+  if (stock <= 0) {
+    availBox.classList.add('no'); availTxt.innerHTML='<strong>❌ Out of Stock</strong>';
+    btnAdd.style.display='none'; return;
+  }
+
+  // Remaining = total stock minus what's already in the cart for this exact item
+  var remaining = stock - qtyInCart(prod, color, size);
+
+  if (remaining <= 0) {
+    availBox.classList.add('no');
+    availTxt.innerHTML='<strong>🛒 All '+stock+' already in your order</strong>';
+    btnAdd.style.display='none';
+    inpQty.max = stock;
+    return;
+  }
+
+  // Cap the quantity box to what's still available
+  inpQty.max = remaining;
+  if ((parseInt(inpQty.value)||1) > remaining) inpQty.value = remaining;
+
+  availBox.classList.add('ok');
+  if (stock > 3) {
+    availTxt.innerHTML='<strong>✅ In Stock</strong>';
+  } else {
+    availTxt.innerHTML='<strong>✅ Only '+stock+' left!</strong>';
+  }
+  btnAdd.style.display='block';
+}
+
+btnAdd.addEventListener('click', function() {
+  var prod=selProd.value, color=selColor.value, size=selSize.value;
+  var qty = Math.max(1, parseInt(inpQty.value)||1);
+  var stock = INVENTORY[prod]&&INVENTORY[prod][color] ? INVENTORY[prod][color][size] : 0;
+  if (!prod||!color||!size||stock<=0) return;
+
+  // Enforce stock limit — total in cart for this item can never exceed available stock
+  var alreadyIn = qtyInCart(prod, color, size);
+  var remaining = stock - alreadyIn;
+  if (remaining <= 0) {
+    availBox.className='avail-box no';
+    availTxt.innerHTML='<strong>🛒 All '+stock+' already in your order</strong>';
+    btnAdd.style.display='none';
+    return;
+  }
+  if (qty > remaining) {
+    qty = remaining; // cap it
+    availTxt.innerHTML='<strong>⚠ Only '+stock+' available — added '+remaining+'</strong>';
+  }
+
+  // lc = raw color number stored in sheet (strip "Color " prefix)
+  var lc = color.replace('Color ', '');
+
+  var existing = cart.find(function(i){ return i.product===prod&&i.color===color&&i.size===size; });
+  if (existing) { existing.qty += qty; }
+  else {
+    cart.push({ id:nextId++, product:prod, color:color, size:size, qty:qty,
+                lookupType:'main', lp:prod, lc:lc, ls:size });
+  }
+  renderCart();
+  inpQty.value=1;
+  checkAvail(); // refresh remaining count / hide button if maxed out
+  btnAdd.textContent='✓ Added!'; btnAdd.style.background='#22c55e';
+  setTimeout(function(){ if(btnAdd.textContent==='✓ Added!'){ btnAdd.textContent='＋ Add to Order'; btnAdd.style.background=''; } }, 1100);
+});
+
+// Live clamp: if the customer types more than what's available, snap it down
+inpQty.addEventListener('input', function() {
+  var max = parseInt(inpQty.max);
+  var val = parseInt(inpQty.value);
+  if (max && val > max) inpQty.value = max;
+});
+
+// ─── CART ────────────────────────────────────────────────────
+function renderCart() {
+  var total = cart.reduce(function(s,i){ return s+i.qty; }, 0);
+  var cc = document.getElementById('cart-count');
+  if (total>0) { cc.style.display='inline'; cc.textContent=total; } else { cc.style.display='none'; }
+
+  var wrap = document.getElementById('cart-wrap');
+  if (cart.length===0) { wrap.innerHTML='<p class="empty-msg">No items added yet.</p>'; return; }
+
+  var rows = cart.map(function(item) {
+    return '<tr><td><strong>'+item.product+'</strong></td><td>'+item.color+'</td><td>'+item.size+'</td><td>'+item.qty+'</td>'
+          +'<td><button class="btn-rm" onclick="removeItem('+item.id+')">✕</button></td></tr>';
+  }).join('');
+
+  wrap.innerHTML = '<table><thead><tr><th>Product</th><th>Color</th><th>Size</th><th>Qty</th><th></th></tr></thead>'
+    +'<tbody>'+rows
+    +'<tr class="total-row"><td colspan="3">Total</td><td>'+total+'</td><td></td></tr>'
+    +'</tbody></table>';
+}
+
+function removeItem(id) {
+  cart = cart.filter(function(i){ return i.id!==id; });
+  renderCart();
+  checkAvail(); // re-enable Add button if the removed item was the current selection
+}
+
+// ─── SUBMIT ──────────────────────────────────────────────────
+document.getElementById('btn-submit').addEventListener('click', function() {
+  var name  = document.getElementById('cust-name').value.trim();
+  var phone = document.getElementById('cust-phone').value.trim();
+  var notes = document.getElementById('cust-notes').value.trim();
+  var errEl = document.getElementById('submit-error');
+
+  errEl.style.display='none';
+
+  if (!name)  { errEl.textContent='⚠ Please enter your name.'; errEl.style.display='block'; return; }
+  if (cart.length===0) { errEl.textContent='⚠ Please add at least one item to your order.'; errEl.style.display='block'; return; }
+
+  // Build clean items list (without internal IDs)
+  var items = cart.map(function(i) {
+    return { product:i.product, color:i.color, size:i.size, qty:i.qty,
+             lookupType:i.lookupType, lp:i.lp, lc:i.lc, ls:i.ls };
+  });
+
+  document.getElementById('loading-bar').style.display='block';
+  document.getElementById('btn-submit').disabled=true;
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      document.getElementById('loading-bar').style.display='none';
+      if (result.success) {
+        document.getElementById('order-id-display').textContent = result.orderId;
+        lastOrder = { orderId: result.orderId, customerName: name, customerPhone: phone, notes: notes, items: items, date: new Date().toLocaleDateString() };
+        document.getElementById('main-form').style.display='none';
+        document.getElementById('success-screen').style.display='block';
+      } else {
+        document.getElementById('btn-submit').disabled=false;
+        errEl.textContent='❌ Error: '+result.error;
+        errEl.style.display='block';
+      }
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('loading-bar').style.display='none';
+      document.getElementById('btn-submit').disabled=false;
+      errEl.textContent='❌ Connection error. Please try again.';
+      errEl.style.display='block';
+    })
+    .submitOrder({ customerName:name, customerEmail:'', customerPhone:phone, notes:notes, items:items });
+});
+
+// ─── SAVE ORDER AS PDF ────────────────────────────────────────
+function saveOrderPdf() {
+  if (!lastOrder) return;
+  var rows = lastOrder.items.map(function(i) {
+    return '<tr>'
+      + '<td style="padding:9px 12px;border-bottom:1px solid #ddd;font-weight:600;color:#111">' + i.product + '</td>'
+      + '<td style="padding:9px 12px;border-bottom:1px solid #ddd;color:#333">' + i.color + '</td>'
+      + '<td style="padding:9px 12px;border-bottom:1px solid #ddd;color:#333">' + i.size + '</td>'
+      + '<td style="padding:9px 12px;border-bottom:1px solid #ddd;text-align:center;font-weight:700;color:#111">' + i.qty + '</td>'
+      + '</tr>';
+  }).join('');
+  var total = lastOrder.items.reduce(function(s,i){ return s+i.qty; }, 0);
+
+  document.getElementById('pdf-overlay-inner').innerHTML =
+    '<div style="background:#1a1a2e;color:#fff;padding:24px;border-radius:10px 10px 0 0;text-align:center">'
+    +   '<h1 style="margin:0 0 4px;font-size:1.4rem;color:#fff">Burmelin</h1>'
+    +   '<p style="margin:0;opacity:.7;font-size:.88rem;color:#fff">Order Confirmation</p>'
+    + '</div>'
+    + '<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 10px 10px;padding:24px;background:#fff">'
+    +   '<table style="width:100%;border-collapse:collapse;margin-bottom:20px;font-size:.9rem">'
+    +     '<tr><td style="padding:4px 0;color:#999;width:110px">Order ID</td><td style="font-weight:700;color:#1a1a2e">' + lastOrder.orderId + '</td></tr>'
+    +     '<tr><td style="padding:4px 0;color:#999">Date</td><td style="color:#333">' + lastOrder.date + '</td></tr>'
+    +     '<tr><td style="padding:4px 0;color:#999">Customer</td><td style="color:#333"><strong>' + lastOrder.customerName + '</strong></td></tr>'
+    +     (lastOrder.customerPhone ? '<tr><td style="padding:4px 0;color:#999">Phone</td><td style="color:#333">' + lastOrder.customerPhone + '</td></tr>' : '')
+    +   '</table>'
+    +   '<table style="width:100%;border-collapse:collapse;font-size:.9rem">'
+    +     '<thead><tr style="background:#f8fafc">'
+    +       '<th style="padding:9px 12px;text-align:left;font-size:.75rem;text-transform:uppercase;color:#888;border-bottom:2px solid #e2e8f0">Product</th>'
+    +       '<th style="padding:9px 12px;text-align:left;font-size:.75rem;text-transform:uppercase;color:#888;border-bottom:2px solid #e2e8f0">Color</th>'
+    +       '<th style="padding:9px 12px;text-align:left;font-size:.75rem;text-transform:uppercase;color:#888;border-bottom:2px solid #e2e8f0">Size</th>'
+    +       '<th style="padding:9px 12px;text-align:center;font-size:.75rem;text-transform:uppercase;color:#888;border-bottom:2px solid #e2e8f0">Qty</th>'
+    +     '</tr></thead><tbody>' + rows + '</tbody>'
+    +   '</table>'
+    +   '<div style="background:#f8fafc;padding:12px;margin-top:12px;display:flex;justify-content:space-between">'
+    +     '<span style="color:#555">Total Items</span><strong style="color:#1a1a2e">' + total + '</strong>'
+    +   '</div>'
+    +   (lastOrder.notes ? '<div style="margin-top:12px;padding:10px 12px;background:#fffbeb;border-left:4px solid #f59e0b;font-size:.88rem;color:#555"><strong>Notes:</strong> ' + lastOrder.notes + '</div>' : '')
+    + '</div>';
+
+  document.getElementById('pdf-overlay').style.display = 'block';
+  window.scrollTo(0,0);
+}
+
+function resetForm() {
+  cart=[]; nextId=1; lastOrder=null;
+  document.getElementById('cust-name').value='';
+  document.getElementById('cust-phone').value='';
+  document.getElementById('cust-notes').value='';
+  if (prodSearchEl) prodSearchEl.value='';
+  selProd.value=''; resetColor(); resetSize(); hideAvail();
+  btnAdd.style.display='none';
+  renderCart();
+  document.getElementById('main-form').style.display='block';
+  document.getElementById('success-screen').style.display='none';
+  document.getElementById('btn-submit').disabled=false;
+  document.getElementById('submit-error').style.display='none';
+  document.getElementById('pdf-overlay').style.display='none';
+}
+
+function resetColor(){ selColor.innerHTML='<option value="">— Choose color —</option>'; selColor.disabled=true; }
+function resetSize() { selSize.innerHTML='<option value="">— Choose size —</option>'; selSize.disabled=true; }
+function hideAvail() { availBox.className='avail-box idle'; availTxt.textContent='Select product, color and size to check availability.'; }
+
+renderCart();
+</script>
+</body>
+</html>

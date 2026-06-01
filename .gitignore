@@ -1,0 +1,13 @@
+# Google Apps Script local config (machine-specific path + auth)
+.clasp.json
+.clasprc.json
+
+# Node
+node_modules/
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
