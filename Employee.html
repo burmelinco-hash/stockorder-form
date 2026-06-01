@@ -193,6 +193,54 @@ tbody tr:last-child td{border-bottom:none}
 </div>
 
 <script>
+// ════════════════════════════════════════════════════════════════
+//  API SHIM — only activates when NOT inside Google Apps Script.
+//  Inside Apps Script, google.script.run is already native.
+//  On Vercel (or any static host), this shim emulates it via fetch.
+// ════════════════════════════════════════════════════════════════
+var API_URL = 'https://script.google.com/macros/s/AKfycbyiayJs05UBqg65jl3HhyF8rqcIiuZvF6A7BKDsBcKILnw48Qz8-o-LxdqcVwgpDZRp/exec';
+(function(){
+  // If native google.script.run already exists, we are inside Apps Script — do nothing
+  if (typeof google !== 'undefined' && google.script && google.script.run) return;
+  var GET_ACTIONS = { getBusinessName:1, getInventory:1 };
+  var POST_ARGS = {
+    getOrders:      ['password'],
+    submitOrder:    ['order'],
+    sendInvoice:    ['orderId','password'],
+    deleteOrder:    ['orderId','password'],
+    editOrderItems: ['orderId','newItems','password'],
+    markDone:       ['orderId','password']
+  };
+  function makeRunner(){
+    var onOk=null, onErr=null;
+    var runner = {
+      withSuccessHandler:function(cb){ onOk=cb; return runner; },
+      withFailureHandler:function(cb){ onErr=cb; return runner; }
+    };
+    function attach(name){
+      runner[name] = function(){
+        var args = arguments, req;
+        if (GET_ACTIONS[name]) {
+          req = fetch(API_URL + '?action=' + encodeURIComponent(name));
+        } else {
+          var payload = { action: name };
+          (POST_ARGS[name]||[]).forEach(function(k,i){ payload[k] = args[i]; });
+          req = fetch(API_URL, { method:'POST', body: JSON.stringify(payload) });
+        }
+        req.then(function(r){ return r.json(); })
+           .then(function(res){ if (onOk) onOk(res); })
+           .catch(function(err){ if (onErr) onErr(err); });
+      };
+    }
+    Object.keys(GET_ACTIONS).forEach(attach);
+    Object.keys(POST_ARGS).forEach(attach);
+    return runner;
+  }
+  window.google = window.google || {};
+  window.google.script = window.google.script || {};
+  Object.defineProperty(window.google.script, 'run', { get: makeRunner });
+})();
+
 var SESSION_PASS   = '';
 var ALL_ORDERS     = [];
 var CURRENT_FILTER = 'all';
