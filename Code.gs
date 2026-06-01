@@ -20,19 +20,18 @@ function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : '';
   if (action) return handleApi(action, e.parameter, null);
 
-  var page = (e && e.parameter && e.parameter.page) ? e.parameter.page : 'customer';
-  if (page === 'employee') {
-    return HtmlService.createTemplateFromFile('Employee')
-      .evaluate()
-      .setTitle('Employee Dashboard — ' + BUSINESS_NAME)
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  }
-  return HtmlService.createTemplateFromFile('Customer')
-    .evaluate()
-    .setTitle('Order Form — ' + BUSINESS_NAME)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  // Old Apps Script links are disabled — redirect everyone to the new Vercel site
+  return HtmlService.createHtmlOutput(
+    '<meta http-equiv="refresh" content="0; url=https://stockorder-form.vercel.app">'
+    + '<style>body{font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f0f2f5}'
+    + '.box{text-align:center;padding:40px;background:#fff;border-radius:16px;box-shadow:0 2px 20px rgba(0,0,0,.1)}'
+    + 'h2{color:#1a1a2e;margin-bottom:10px}p{color:#666;margin-bottom:20px}'
+    + 'a{background:#4f46e5;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700}'
+    + '</style>'
+    + '<div class="box"><h2>This link has moved</h2>'
+    + '<p>Please use the new link below.</p>'
+    + '<a href="https://stockorder-form.vercel.app">Go to Burmelin Order Form</a></div>'
+  ).setTitle('Moved').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 // POST entry — body is JSON: { action: '...', ...payload }
