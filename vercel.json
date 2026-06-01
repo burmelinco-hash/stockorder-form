@@ -1,8 +1,7 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
-  "routes": [
-    { "src": "/employee", "dest": "/Employee.html" },
-    { "src": "/",         "dest": "/index.html" }
+  "rewrites": [
+    { "source": "/employee", "destination": "/Employee.html" }
   ]
 }
