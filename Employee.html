@@ -664,12 +664,12 @@ function buildOrderCard(order) {
   var editBtn   = '';
   var deleteBtn = '<button class="btn-delete" onclick="doDeleteOrder(\'' + order.orderId + '\')">🗑 Delete</button>';
 
-  if (!alreadyDone) {
-    invoiceBtn = '<button class="btn-invoice" id="inv-' + order.orderId + '" onclick="printInvoice(\'' + order.orderId + '\')">🖨 Print Invoice</button>';
+  // Print invoice is always available regardless of status
+  invoiceBtn = '<button class="btn-invoice" id="inv-' + order.orderId + '" onclick="printInvoice(\'' + order.orderId + '\')">🖨 Print Invoice</button>';
 
+  if (!alreadyDone) {
     doneBtn = '<button class="btn-done" id="done-' + order.orderId + '" onclick="markDone(\'' + order.orderId + '\')">'
       + '✔ Mark as Done</button>';
-
     editBtn = '<button class="btn-edit" onclick="toggleEdit(\'' + order.orderId + '\')">✏ Edit Items</button>';
   } else {
     doneBtn = '<button class="btn-done" disabled>✔ Completed</button>';
