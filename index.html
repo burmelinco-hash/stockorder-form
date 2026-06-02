@@ -53,6 +53,28 @@ tbody tr:last-child td{border-bottom:none}
 .spinner{display:inline-block;width:16px;height:16px;border:2px solid #c7d2fe;border-top-color:#4f46e5;border-radius:50%;animation:spin .7s linear infinite;margin-right:8px;vertical-align:middle}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:480px){.row2{grid-template-columns:1fr}}
+/* ── MODE TOGGLE ── */
+.mode-toggle{display:flex;gap:8px}
+.mode-btn{padding:7px 18px;border-radius:8px;border:2px solid #4f46e5;background:#fff;color:#4f46e5;font-size:.85rem;font-weight:700;cursor:pointer;transition:.15s}
+.mode-btn.active{background:#4f46e5;color:#fff}
+/* ── GRID MODE ── */
+.grid-product-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding:10px 14px;background:#f0f2f5;border-radius:8px}
+.grid-product-name{font-size:1.05rem;font-weight:700;color:#1a1a2e}
+.btn-change-prod{background:none;border:none;color:#4f46e5;font-size:.85rem;font-weight:600;cursor:pointer;padding:4px 8px;border-radius:5px}
+.btn-change-prod:hover{background:#e0e7ff}
+.grid-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:14px;border:1px solid #e2e8f0;border-radius:10px}
+.grid-table{border-collapse:collapse;font-size:.85rem;width:100%}
+.grid-th-color{min-width:90px;padding:9px 12px;text-align:left;font-size:.72rem;text-transform:uppercase;color:#888;background:#f8fafc;position:sticky;left:0;z-index:2;border-bottom:2px solid #e2e8f0}
+.grid-th-size{min-width:52px;padding:9px 6px;text-align:center;font-size:.85rem;font-weight:700;color:#1a1a2e;background:#f8fafc;border-bottom:2px solid #e2e8f0;border-left:1px solid #f0f2f5}
+.grid-td-color{padding:8px 12px;font-size:.88rem;font-weight:600;color:#1a1a2e;white-space:nowrap;background:#fff;position:sticky;left:0;z-index:1;border-bottom:1px solid #f0f2f5;border-right:2px solid #e2e8f0}
+.grid-td-cell{padding:5px 4px;border-bottom:1px solid #f0f2f5;border-left:1px solid #f0f2f5;text-align:center}
+.grid-cell{width:46px;padding:6px 2px;border:2px solid #e2e8f0;border-radius:6px;font-size:.92rem;text-align:center;font-family:inherit;-moz-appearance:textfield;background:#fafafa}
+.grid-cell::-webkit-outer-spin-button,.grid-cell::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.grid-cell:focus{outline:none;border-color:#4f46e5;background:#fff}
+.grid-cell.filled{border-color:#22c55e;background:#f0fdf4;font-weight:700;color:#15803d}
+.grid-cell-out{width:46px;padding:6px 2px;border:2px solid #f0f2f5;border-radius:6px;font-size:.88rem;text-align:center;background:#f8fafc;color:#ddd;cursor:not-allowed}
+.btn-add-grid{width:100%;padding:13px;background:#4f46e5;color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:600;cursor:pointer;transition:.2s;margin-top:4px}
+.btn-add-grid:hover{background:#4338ca}
 /* PDF overlay */
 .btn-pdf{background:#16a34a;border:none;color:#fff;padding:13px 24px;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer;margin-top:14px;transition:.2s;display:block;width:100%}
 .btn-pdf:hover{background:#15803d}
@@ -99,42 +121,69 @@ tbody tr:last-child td{border-bottom:none}
 
     <!-- Product Selection -->
     <div class="card">
-      <h2>Add Items</h2>
-      <div class="form-group" style="position:relative">
-        <label for="prod-search">Search Product ID</label>
-        <input type="text" id="prod-search" placeholder="Type product ID e.g. B01, F1165…" autocomplete="off" style="border-radius:8px">
-        <div id="prod-suggestions" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:2px solid #4f46e5;border-top:none;border-radius:0 0 10px 10px;max-height:200px;overflow-y:auto;z-index:99;box-shadow:0 6px 16px rgba(0,0,0,.12)"></div>
-      </div>
-      <div class="form-group">
-        <label for="sel-product">Or browse by category</label>
-        <select id="sel-product">
-          <option value="">— Choose a product —</option>
-        </select>
-      </div>
-      <div class="row2">
-        <div class="form-group">
-          <label for="sel-color">Color</label>
-          <select id="sel-color" disabled>
-            <option value="">— Choose color —</option>
-          </select>
+      <!-- Header + mode toggle -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;padding-bottom:10px;border-bottom:2px solid #f0f2f5">
+        <h2 style="margin:0;border:none;padding:0">Add Items</h2>
+        <div class="mode-toggle">
+          <button class="mode-btn active" id="btn-mode-simple" onclick="switchMode('simple')">Simple</button>
+          <button class="mode-btn" id="btn-mode-grid" onclick="switchMode('grid')">Grid</button>
         </div>
-        <div class="form-group">
-          <label for="sel-size">Size</label>
-          <select id="sel-size" disabled>
-            <option value="">— Choose size —</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-group">
-        <label for="inp-qty">Quantity</label>
-        <input type="number" id="inp-qty" value="1" min="1" max="999" style="max-width:120px">
       </div>
 
-      <div class="avail-box idle" id="avail-box">
-        <span class="avail-icon">ℹ️</span>
-        <span id="avail-text">Select product, color and size to check availability.</span>
+      <!-- ── SIMPLE MODE ── -->
+      <div id="simple-mode">
+        <div class="form-group" style="position:relative">
+          <label for="prod-search">Search Product ID</label>
+          <input type="text" id="prod-search" placeholder="Type product ID e.g. B01, F1165…" autocomplete="off" style="border-radius:8px">
+          <div id="prod-suggestions" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:2px solid #4f46e5;border-top:none;border-radius:0 0 10px 10px;max-height:200px;overflow-y:auto;z-index:99;box-shadow:0 6px 16px rgba(0,0,0,.12)"></div>
+        </div>
+        <div class="form-group">
+          <label for="sel-product">Or browse by category</label>
+          <select id="sel-product">
+            <option value="">— Choose a product —</option>
+          </select>
+        </div>
+        <div class="row2">
+          <div class="form-group">
+            <label for="sel-color">Color</label>
+            <select id="sel-color" disabled>
+              <option value="">— Choose color —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="sel-size">Size</label>
+            <select id="sel-size" disabled>
+              <option value="">— Choose size —</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="inp-qty">Quantity</label>
+          <input type="number" id="inp-qty" value="1" min="1" max="999" style="max-width:120px">
+        </div>
+        <div class="avail-box idle" id="avail-box">
+          <span class="avail-icon">ℹ️</span>
+          <span id="avail-text">Select product, color and size to check availability.</span>
+        </div>
+        <button class="btn-add" id="btn-add" style="display:none">＋ Add to Order</button>
       </div>
-      <button class="btn-add" id="btn-add" style="display:none">＋ Add to Order</button>
+
+      <!-- ── GRID MODE ── -->
+      <div id="grid-mode" style="display:none">
+        <div class="form-group" style="position:relative">
+          <label for="grid-search">Product ID</label>
+          <input type="text" id="grid-search" placeholder="Type product ID e.g. F1156, B01…" autocomplete="off">
+          <div id="grid-suggestions" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:2px solid #4f46e5;border-top:none;border-radius:0 0 10px 10px;max-height:200px;overflow-y:auto;z-index:99;box-shadow:0 6px 16px rgba(0,0,0,.12)"></div>
+        </div>
+        <div id="grid-product-view" style="display:none">
+          <div class="grid-product-bar">
+            <span class="grid-product-name" id="grid-product-name"></span>
+            <button class="btn-change-prod" onclick="clearGrid()">✕ Change Product</button>
+          </div>
+          <div class="grid-wrap" id="grid-wrap"></div>
+          <button class="btn-add-grid" id="btn-add-grid" onclick="addGridToCart()">＋ Add to Order</button>
+        </div>
+      </div>
     </div>
 
     <!-- Cart -->
@@ -184,42 +233,9 @@ var API_URL = 'https://script.google.com/macros/s/AKfycbyiayJs05UBqg65jl3HhyF8rq
 (function(){
   if (typeof google !== 'undefined' && google.script && google.script.run) return;
   var GET_ACTIONS = { getBusinessName:1, getInventory:1 };
-  var POST_ARGS = {
-    getOrders:      ['password'],
-    submitOrder:    ['order'],
-    sendInvoice:    ['orderId','password'],
-    deleteOrder:    ['orderId','password'],
-    editOrderItems: ['orderId','newItems','password'],
-    markDone:       ['orderId','password']
-  };
-  function makeRunner(){
-    var onOk=null, onErr=null;
-    var runner = {
-      withSuccessHandler:function(cb){ onOk=cb; return runner; },
-      withFailureHandler:function(cb){ onErr=cb; return runner; }
-    };
-    function attach(name){
-      runner[name] = function(){
-        var args = arguments, req;
-        if (GET_ACTIONS[name]) {
-          req = fetch(API_URL + '?action=' + encodeURIComponent(name));
-        } else {
-          var payload = { action: name };
-          (POST_ARGS[name]||[]).forEach(function(k,i){ payload[k] = args[i]; });
-          req = fetch(API_URL, { method:'POST', body: JSON.stringify(payload) });
-        }
-        req.then(function(r){ return r.json(); })
-           .then(function(res){ if (onOk) onOk(res); })
-           .catch(function(err){ if (onErr) onErr(err); });
-      };
-    }
-    Object.keys(GET_ACTIONS).forEach(attach);
-    Object.keys(POST_ARGS).forEach(attach);
-    return runner;
-  }
-  window.google = window.google || {};
-  window.google.script = window.google.script || {};
-  Object.defineProperty(window.google.script, 'run', { get: makeRunner });
+  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'] };
+  function makeRunner(){ var onOk=null,onErr=null; var runner={ withSuccessHandler:function(cb){onOk=cb;return runner;}, withFailureHandler:function(cb){onErr=cb;return runner;} }; function attach(name){ runner[name]=function(){ var args=arguments,req; if(GET_ACTIONS[name]){ req=fetch(API_URL+'?action='+encodeURIComponent(name)); }else{ var payload={action:name}; (POST_ARGS[name]||[]).forEach(function(k,i){payload[k]=args[i];}); req=fetch(API_URL,{method:'POST',body:JSON.stringify(payload)}); } req.then(function(r){return r.json();}).then(function(res){if(onOk)onOk(res);}).catch(function(err){if(onErr)onErr(err);}); }; } Object.keys(GET_ACTIONS).forEach(attach); Object.keys(POST_ARGS).forEach(attach); return runner; }
+  window.google=window.google||{}; window.google.script=window.google.script||{}; Object.defineProperty(window.google.script,'run',{get:makeRunner});
 })();
 
 // ─── STATE ────────────────────────────────────────────────────
@@ -270,6 +286,161 @@ try {
 } catch(e) {
   selProd.innerHTML = '<option value="">— Choose a product —</option>';
   selProd.disabled = false;
+}
+
+// ─── MODE TOGGLE ─────────────────────────────────────────────
+function switchMode(mode) {
+  var isGrid = mode === 'grid';
+  document.getElementById('simple-mode').style.display = isGrid ? 'none' : 'block';
+  document.getElementById('grid-mode').style.display   = isGrid ? 'block' : 'none';
+  document.getElementById('btn-mode-simple').classList.toggle('active', !isGrid);
+  document.getElementById('btn-mode-grid').classList.toggle('active',  isGrid);
+  if (isGrid) setTimeout(function(){ document.getElementById('grid-search').focus(); }, 50);
+}
+
+// ─── GRID MODE ───────────────────────────────────────────────
+var GRID_PROD = null;
+
+(function(){
+  var gridInput   = document.getElementById('grid-search');
+  var gridSuggest = document.getElementById('grid-suggestions');
+
+  gridInput.addEventListener('input', function() {
+    var q = this.value.trim().toLowerCase();
+    gridSuggest.innerHTML = '';
+    if (!q) { gridSuggest.style.display = 'none'; return; }
+    var matches = Object.keys(INVENTORY).filter(function(p){ return p.toLowerCase().indexOf(q) !== -1; });
+    if (!matches.length) { gridSuggest.style.display='none'; return; }
+    matches.forEach(function(p) {
+      var d = document.createElement('div');
+      d.textContent = p;
+      d.style.cssText = 'padding:10px 14px;cursor:pointer;font-size:.95rem;border-bottom:1px solid #f0f2f5;color:#1a1a2e';
+      d.addEventListener('mousedown', function(e){ e.preventDefault(); buildProductGrid(p); gridInput.value=p; gridSuggest.style.display='none'; });
+      d.addEventListener('mouseover',  function(){ this.style.background='#f0f2f5'; });
+      d.addEventListener('mouseout',   function(){ this.style.background='#fff'; });
+      gridSuggest.appendChild(d);
+    });
+    gridSuggest.style.display = 'block';
+  });
+  gridInput.addEventListener('blur', function(){ setTimeout(function(){ gridSuggest.style.display='none'; }, 150); });
+  gridInput.addEventListener('keydown', function(e){
+    if (e.key === 'Enter') {
+      var q = gridInput.value.trim();
+      if (INVENTORY[q]) { buildProductGrid(q); gridSuggest.style.display='none'; }
+    }
+  });
+})();
+
+function buildProductGrid(prod) {
+  if (!INVENTORY[prod]) return;
+  GRID_PROD = prod;
+
+  var inv = INVENTORY[prod];
+
+  // Collect all sizes that have at least 1 color with stock > 0; sort numerically
+  var sizeSet = {};
+  Object.keys(inv).forEach(function(c) {
+    Object.keys(inv[c]).forEach(function(s) { if ((inv[c][s]||0) > 0) sizeSet[s] = 1; });
+  });
+  var sizes = Object.keys(sizeSet).sort(function(a,b){
+    var na=parseFloat(a), nb=parseFloat(b);
+    return (!isNaN(na)&&!isNaN(nb)) ? na-nb : (a<b?-1:1);
+  });
+
+  // Only colors with at least one in-stock size
+  var colors = Object.keys(inv).filter(function(c){
+    return Object.keys(inv[c]).some(function(s){ return (inv[c][s]||0)>0; });
+  });
+
+  // Header row
+  var thead = '<tr>'
+    + '<th class="grid-th-color"></th>'
+    + sizes.map(function(s){ return '<th class="grid-th-size">' + s + '</th>'; }).join('')
+    + '</tr>';
+
+  // Data rows
+  var tbody = colors.map(function(color) {
+    var cells = sizes.map(function(size) {
+      var stock = (inv[color]&&inv[color][size]!==undefined) ? inv[color][size] : 0;
+      // Account for what's already in cart
+      var inCart = qtyInCart(prod, color, size);
+      var avail  = Math.max(0, stock - inCart);
+      if (stock <= 0) {
+        return '<td class="grid-td-cell"><input class="grid-cell-out" type="text" disabled value="—" tabindex="-1"></td>';
+      }
+      var id = 'gc-' + prod.replace(/[^a-z0-9]/gi,'_') + '-' + color.replace(/\s/g,'_') + '-' + size;
+      return '<td class="grid-td-cell">'
+        + '<input class="grid-cell" id="' + id + '" type="number" inputmode="numeric" '
+        + 'min="0" max="' + avail + '" placeholder="" '
+        + 'data-prod="' + prod + '" data-color="' + color + '" data-size="' + size + '" data-stock="' + stock + '" data-avail="' + avail + '"'
+        + ' oninput="onGridCellInput(this)">'
+        + '</td>';
+    }).join('');
+    return '<tr><td class="grid-td-color">' + color + '</td>' + cells + '</tr>';
+  }).join('');
+
+  document.getElementById('grid-wrap').innerHTML =
+    '<table class="grid-table"><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table>';
+
+  document.getElementById('grid-product-name').textContent = prod;
+  document.getElementById('btn-add-grid').textContent = '＋ Add ' + prod + ' to Order';
+  document.getElementById('grid-product-view').style.display = 'block';
+}
+
+function onGridCellInput(el) {
+  var val = parseInt(el.value) || 0;
+  var avail = parseInt(el.dataset.avail) || 0;
+  if (val > avail) { el.value = avail; val = avail; }
+  if (val < 0)     { el.value = 0;     val = 0;     }
+  el.classList.toggle('filled', val > 0);
+}
+
+function addGridToCart() {
+  if (!GRID_PROD) return;
+  var cells = document.querySelectorAll('#grid-wrap .grid-cell');
+  var added = 0;
+
+  cells.forEach(function(el) {
+    var qty = parseInt(el.value) || 0;
+    if (qty <= 0) return;
+    var prod  = el.dataset.prod;
+    var color = el.dataset.color;
+    var size  = el.dataset.size;
+    var stock = parseInt(el.dataset.stock) || 0;
+    qty = Math.min(qty, stock - qtyInCart(prod, color, size));
+    if (qty <= 0) return;
+    var lc = color.replace('Color ', '');
+    var existing = cart.find(function(i){ return i.product===prod&&i.color===color&&i.size===size; });
+    if (existing) existing.qty += qty;
+    else cart.push({ id:nextId++, product:prod, color:color, size:size, qty:qty, lookupType:'main', lp:prod, lc:lc, ls:size });
+    added++;
+  });
+
+  if (added === 0) {
+    document.getElementById('btn-add-grid').textContent = '⚠ Enter a quantity first';
+    setTimeout(function(){ document.getElementById('btn-add-grid').textContent = '＋ Add ' + GRID_PROD + ' to Order'; }, 1500);
+    return;
+  }
+
+  renderCart();
+  var name = GRID_PROD;
+  clearGrid();
+
+  // Brief success flash on the button (it'll be reset by clearGrid but we show it first)
+  var btn = document.getElementById('btn-add-grid');
+  if (btn) {
+    btn.textContent = '✓ ' + name + ' added!';
+    btn.style.background = '#22c55e';
+    setTimeout(function(){ if(btn){ btn.textContent='＋ Add to Order'; btn.style.background=''; } }, 1300);
+  }
+}
+
+function clearGrid() {
+  GRID_PROD = null;
+  document.getElementById('grid-product-view').style.display = 'none';
+  document.getElementById('grid-search').value = '';
+  document.getElementById('grid-suggestions').style.display = 'none';
+  document.getElementById('grid-search').focus();
 }
 
 // ─── PRODUCT SEARCH ──────────────────────────────────────────
