@@ -475,12 +475,17 @@ function deductStock(ss, item) {
         var color     = String(row[3]).trim();
         var size      = String(row[4]).trim();
 
-        if (productId === String(item.lp).trim() &&
-            color     === String(item.lc).trim() &&
-            size      === String(item.ls).trim()) {
+        // Use lp/lc/ls (lookup fields) when available; fall back to product/color/size
+        var matchProd  = String(item.lp  || item.product || '').trim();
+        var matchColor = String(item.lc  || (item.color  || '').replace(/^Color\s*/i, '')).trim();
+        var matchSize  = String(item.ls  || item.size    || '').trim();
+
+        if (productId === matchProd &&
+            color     === matchColor &&
+            size      === matchSize) {
           var currentStock = parseInt(row[5]) || 0;
           var newStock     = Math.max(0, currentStock - (item.qty || 0));
-          sheet.getRange(r + 1, 6).setValue(newStock); // col F = column 6
+          sheet.getRange(r + 1, 6).setValue(newStock);
           return { success: true };
         }
       }
