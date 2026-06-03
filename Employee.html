@@ -90,6 +90,16 @@ tbody tr:last-child td{border-bottom:none}
 .btn-save-edit:hover{background:#15803d}
 .btn-cancel-edit{padding:9px 18px;background:none;border:2px solid #cbd5e1;color:#64748b;border-radius:8px;font-size:.88rem;font-weight:600;cursor:pointer}
 .btn-cancel-edit:hover{background:#f1f5f9}
+/* ── ADD NEW ITEM IN EDIT ── */
+.edit-add-section{margin-top:14px;padding-top:12px;border-top:2px dashed #fde68a}
+.edit-add-title{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:#92400e;font-weight:700;margin-bottom:10px}
+.edit-add-grid{display:grid;grid-template-columns:2fr 1.5fr 1fr 1fr auto;gap:6px;align-items:center}
+.edit-add-input{padding:7px 9px;border:2px solid #fde68a;border-radius:6px;font-size:.88rem;font-family:inherit;width:100%}
+.edit-add-input:focus{outline:none;border-color:#f59e0b}
+.btn-add-item{padding:7px 12px;background:#f59e0b;color:#fff;border:none;border-radius:6px;font-size:.88rem;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn-add-item:hover{background:#d97706}
+.edit-new-badge{font-size:.7rem;background:#dcfce7;color:#15803d;border-radius:4px;padding:1px 5px;font-weight:700;margin-left:4px}
+@media(max-width:580px){.edit-add-grid{grid-template-columns:1fr 1fr;gap:6px}.edit-add-grid button{grid-column:span 2}}
 /* ── STOCK TAB ── */
 .stock-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;margin-bottom:20px}
 .stock-cat-card{background:#fff;border-radius:12px;padding:20px 16px;cursor:pointer;box-shadow:0 1px 8px rgba(0,0,0,.07);transition:.15s;text-align:center}
@@ -675,11 +685,14 @@ function buildOrderCard(order) {
     doneBtn = '<button class="btn-done" disabled>✔ Completed</button>';
   }
 
-  // Build edit panel rows from current items
+  // Build edit panel rows — store full item data as data-attributes so saveEdit
+  // can read everything without needing to look up order.items by index
   var editRows = (order.items||[]).map(function(item, idx) {
-    return '<div class="edit-item-row" id="edit-row-' + order.orderId + '-' + idx + '">'
+    return '<div class="edit-item-row" id="edit-row-' + order.orderId + '-' + idx + '"'
+      + ' data-prod="' + item.product + '" data-color="' + item.color + '" data-size="' + item.size + '"'
+      + ' data-lp="' + (item.lp||item.product) + '" data-lc="' + (item.lc||item.color.replace('Color ','')) + '" data-ls="' + (item.ls||item.size) + '">'
       + '<span class="edit-item-label"><strong>' + item.product + '</strong> · ' + item.color + ' · Size ' + item.size + '</span>'
-      + '<input class="edit-qty" type="number" min="1" max="999" value="' + item.qty + '" id="edit-qty-' + order.orderId + '-' + idx + '">'
+      + '<input class="edit-qty" type="number" min="1" max="999" value="' + item.qty + '">'
       + '<button class="btn-rm-item" onclick="removeEditItem(\'' + order.orderId + '\',' + idx + ')" title="Remove this item">✕</button>'
       + '</div>';
   }).join('');
@@ -709,6 +722,17 @@ function buildOrderCard(order) {
     +   '<div class="edit-panel" id="edit-panel-' + order.orderId + '">'
     +     '<h4>✏ Edit Items — remove or adjust quantities before marking done</h4>'
     +     '<div id="edit-rows-' + order.orderId + '">' + editRows + '</div>'
+    +     '<div class="edit-add-section">'
+    +       '<div class="edit-add-title">＋ Add New Item</div>'
+    +       '<div class="edit-add-grid">'
+    +         '<input class="edit-add-input" type="text" id="add-prod-' + order.orderId + '" placeholder="Product ID" autocomplete="off">'
+    +         '<input class="edit-add-input" type="text" id="add-color-' + order.orderId + '" placeholder="Color No." autocomplete="off">'
+    +         '<input class="edit-add-input" type="text" id="add-size-' + order.orderId + '" placeholder="Size" autocomplete="off">'
+    +         '<input class="edit-add-input" type="number" id="add-qty-' + order.orderId + '" placeholder="Qty" min="1">'
+    +         '<button class="btn-add-item" onclick="addItemToEdit(\'' + order.orderId + '\')">Add</button>'
+    +       '</div>'
+    +       '<div id="add-item-err-' + order.orderId + '" style="color:#b91c1c;font-size:.8rem;margin-top:5px;display:none"></div>'
+    +     '</div>'
     +     '<div class="edit-actions">'
     +       '<button class="btn-save-edit" onclick="saveEdit(\'' + order.orderId + '\')">💾 Save Changes</button>'
     +       '<button class="btn-cancel-edit" onclick="toggleEdit(\'' + order.orderId + '\')">Cancel</button>'
@@ -835,17 +859,70 @@ function removeEditItem(orderId, idx) {
   if (row) row.style.display = 'none';
 }
 
+function addItemToEdit(orderId) {
+  var prodEl  = document.getElementById('add-prod-'  + orderId);
+  var colorEl = document.getElementById('add-color-' + orderId);
+  var sizeEl  = document.getElementById('add-size-'  + orderId);
+  var qtyEl   = document.getElementById('add-qty-'   + orderId);
+  var errEl   = document.getElementById('add-item-err-' + orderId);
+
+  var prod  = prodEl.value.trim().toUpperCase();
+  var color = colorEl.value.trim();
+  var size  = sizeEl.value.trim();
+  var qty   = parseInt(qtyEl.value) || 0;
+
+  if (!prod || !color || !size || qty <= 0) {
+    errEl.textContent = '⚠ Please fill in Product ID, Color, Size and Qty.';
+    errEl.style.display = 'block';
+    return;
+  }
+  errEl.style.display = 'none';
+
+  // Normalize color: "17" → "Color 17", "Color 17" stays as-is
+  if (/^\d+$/.test(color)) color = 'Color ' + color;
+  var lc = color.replace(/^Color\s*/i, '');
+
+  var rowId  = 'edit-row-' + orderId + '-new-' + Date.now();
+  var newRow = document.createElement('div');
+  newRow.className = 'edit-item-row';
+  newRow.id = rowId;
+  newRow.setAttribute('data-prod',  prod);
+  newRow.setAttribute('data-color', color);
+  newRow.setAttribute('data-size',  size);
+  newRow.setAttribute('data-lp',    prod);
+  newRow.setAttribute('data-lc',    lc);
+  newRow.setAttribute('data-ls',    size);
+  newRow.innerHTML =
+    '<span class="edit-item-label"><strong>' + prod + '</strong> · ' + color + ' · Size ' + size
+    + ' <span class="edit-new-badge">NEW</span></span>'
+    + '<input class="edit-qty" type="number" min="1" max="999" value="' + qty + '">'
+    + '<button class="btn-rm-item" onclick="this.closest(\'.edit-item-row\').style.display=\'none\'" title="Remove">✕</button>';
+
+  document.getElementById('edit-rows-' + orderId).appendChild(newRow);
+  prodEl.value=''; colorEl.value=''; sizeEl.value=''; qtyEl.value='';
+  prodEl.focus();
+}
+
 function saveEdit(orderId) {
   var order = ALL_ORDERS.find(function(o) { return o.orderId === orderId; });
   if (!order) return;
 
+  // Read ALL rows (existing + newly added) from the DOM
   var newItems = [];
-  (order.items || []).forEach(function(item, idx) {
-    var row = document.getElementById('edit-row-' + orderId + '-' + idx);
-    if (!row || row.style.display === 'none') return; // removed
-    var qtyEl = document.getElementById('edit-qty-' + orderId + '-' + idx);
-    var qty = Math.max(1, parseInt(qtyEl ? qtyEl.value : item.qty) || 1);
-    newItems.push(Object.assign({}, item, { qty: qty }));
+  var rows = document.querySelectorAll('#edit-rows-' + orderId + ' .edit-item-row');
+  rows.forEach(function(row) {
+    if (row.style.display === 'none') return; // removed
+    var qtyInput = row.querySelector('.edit-qty');
+    var qty = Math.max(1, parseInt(qtyInput ? qtyInput.value : 1) || 1);
+    var prod  = row.getAttribute('data-prod');
+    var color = row.getAttribute('data-color');
+    var size  = row.getAttribute('data-size');
+    var lp    = row.getAttribute('data-lp') || prod;
+    var lc    = row.getAttribute('data-lc') || color.replace('Color ','');
+    var ls    = row.getAttribute('data-ls') || size;
+    if (prod && color && size) {
+      newItems.push({ product: prod, color: color, size: size, qty: qty, lookupType: 'main', lp: lp, lc: lc, ls: ls });
+    }
   });
 
   if (newItems.length === 0) {
