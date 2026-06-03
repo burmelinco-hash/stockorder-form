@@ -359,6 +359,38 @@ function markDone(orderId, password) {
   }
 }
 
+// ─── UPDATE STOCK QTY (called from Employee stock view) ──────
+function updateStockQty(productId, colorNum, size, newQty, password) {
+  if (password !== EMPLOYEE_PASS) return { success: false, error: 'Wrong password.' };
+  try {
+    var ss     = SpreadsheetApp.getActiveSpreadsheet();
+    var sheets = ss.getSheets();
+
+    for (var s = 0; s < sheets.length; s++) {
+      var sheet = sheets[s];
+      if (sheet.getName().trim() === ORDERS_TAB_NAME) continue;
+      var data = sheet.getDataRange().getValues();
+
+      var startRow = 1;
+      for (var h = 0; h < data.length; h++) {
+        if (String(data[h][1]).trim().toLowerCase() === 'product id') { startRow = h + 1; break; }
+      }
+
+      for (var r = startRow; r < data.length; r++) {
+        if (String(data[r][1]).trim() === String(productId).trim() &&
+            String(data[r][3]).trim() === String(colorNum).trim()  &&
+            String(data[r][4]).trim() === String(size).trim()) {
+          sheet.getRange(r + 1, 6).setValue(parseInt(newQty) || 0);
+          return { success: true };
+        }
+      }
+    }
+    return { success: false, error: 'Item not found in sheet.' };
+  } catch(err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
 // ─── INTERNAL: SAVE SENT ORDER ────────────────────────────────
 // Records the final employee-confirmed items to a "Sent Orders" sheet.
 // This reflects what was actually sent from the warehouse, not the original request.
