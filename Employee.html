@@ -1034,40 +1034,74 @@ function saveEdit(orderId) {
 }
 
 // ─── MARK DONE ───────────────────────────────────────────────
+// Track in-progress markDone calls to prevent any double execution
+var MARKING_DONE = {};
+
 function markDone(orderId) {
+  // Prevent double click at JS level
+  if (MARKING_DONE[orderId]) return;
   if (!confirm('Mark this order as DONE?\n\nThis will:\n• Deduct stock from your Google Sheet\n• Close the order\n\nThis cannot be undone.')) return;
 
-  var btn = document.getElementById('done-' + orderId);
-  var msg = document.getElementById('msg-' + orderId);
-  btn.disabled = true; btn.textContent = '⏳ Processing…';
-  msg.className = 'action-msg'; msg.style.display = 'none';
+  MARKING_DONE[orderId] = true;
+
+  // Always re-query the button from the DOM — captured references go stale
+  function getBtn() { return document.getElementById('done-' + orderId); }
+  function getMsg() { return document.getElementById('msg-' + orderId); }
+
+  var b = getBtn(), m = getMsg();
+  if (b) { b.disabled = true; b.textContent = '⏳ Processing…'; }
+  if (m) { m.className = 'action-msg'; m.style.display = 'none'; }
 
   google.script.run
     .withSuccessHandler(function(result) {
+      delete MARKING_DONE[orderId];
+      var b2 = getBtn(), m2 = getMsg();
+
       if (result.success) {
-        btn.textContent = '✔ Completed';
-        if (result.warnings && result.warnings.length > 0) {
-          msg.className = 'action-msg warn';
-          msg.textContent = '⚠ Done, but some stock could not be updated: ' + result.warnings.join('; ');
-        } else {
-          msg.className = 'action-msg ok';
-          msg.textContent = '✅ Order completed and stock updated in Google Sheet!';
-        }
-        // Update local state
-        var order = ALL_ORDERS.find(function(o){ return o.orderId===orderId; });
+        // Update local order state first
+        var order = ALL_ORDERS.find(function(o){ return o.orderId === orderId; });
         if (order) { order.status = 'Completed'; order.completed = 'Just now'; }
-        // Disable invoice button too
-        var invBtn = document.getElementById('inv-' + orderId);
-        if (invBtn) { invBtn.disabled = true; }
         updateCounts();
+
+        // Re-render this card so all buttons update correctly
+        if (order) {
+          var card = document.getElementById('card-' + orderId);
+          if (card) {
+            card.outerHTML = buildOrderCard(order);
+            // Re-open expanded state
+            var body = document.getElementById('body-' + orderId);
+            var hdr  = document.getElementById('card-' + orderId);
+            if (body) body.classList.add('open');
+            if (hdr)  hdr.querySelector('.order-header').classList.add('expanded');
+          }
+        }
+
+        // Show result message
+        var m3 = getMsg();
+        if (m3) {
+          if (result.alreadyCompleted) {
+            m3.className = 'action-msg warn';
+            m3.textContent = '⚠ This order was already completed — stock was NOT deducted again.';
+          } else if (result.warnings && result.warnings.length > 0) {
+            m3.className = 'action-msg warn';
+            m3.textContent = '⚠ Done, but some items not found in sheet: ' + result.warnings.join('; ');
+          } else {
+            m3.className = 'action-msg ok';
+            m3.textContent = '✅ Order completed and stock updated in Google Sheet!';
+          }
+        }
       } else {
-        btn.disabled = false; btn.textContent = '✔ Mark as Done';
-        msg.className = 'action-msg err'; msg.textContent = '❌ ' + result.error;
+        // On server error: re-enable the button with clear message
+        if (b2) { b2.disabled = false; b2.textContent = '✔ Mark as Done'; }
+        if (m2) { m2.className = 'action-msg err'; m2.textContent = '❌ ' + result.error; }
       }
     })
     .withFailureHandler(function() {
-      btn.disabled = false; btn.textContent = '✔ Mark as Done';
-      msg.className = 'action-msg err'; msg.textContent = '❌ Connection error. Please try again.';
+      delete MARKING_DONE[orderId];
+      // Connection failed — re-enable but warn employee to check before retrying
+      var b4 = getBtn(), m4 = getMsg();
+      if (b4) { b4.disabled = false; b4.textContent = '✔ Mark as Done'; }
+      if (m4) { m4.className = 'action-msg warn'; m4.textContent = '⚠ Connection lost. Please refresh orders before clicking again to avoid double deduction.'; }
     })
     .markDone(orderId, SESSION_PASS);
 }

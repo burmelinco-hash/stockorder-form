@@ -331,6 +331,11 @@ function markDone(orderId, password) {
     var order = findOrder(orderId);
     if (!order) return { success: false, error: 'Order not found: ' + orderId };
 
+    // ── GUARD: if already completed, do nothing (prevents double deduction) ──
+    if (order.status === 'Completed') {
+      return { success: true, warnings: [], alreadyCompleted: true };
+    }
+
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var warnings = [];
 
