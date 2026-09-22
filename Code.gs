@@ -68,6 +68,7 @@ function handleApi(action, params, body) {
     case 'updateStockQty':       out = updateStockQty(body.productId, body.colorNum, body.size, body.newQty, body.password); break;
     case 'getAllRetailStock':     out = getAllRetailStock(); break;
     case 'getStoreStock':        out = getRetailStock(body && body.storeName); break;
+    case 'sellRetailStock':      out = sellRetailStock(body.storeName, body.password, body.rowId, body.qty); break;
     case 'verifyRetailStore':    out = verifyRetailStore(body.storeName, body.password); break;
     case 'updateRetailStockQty': out = updateRetailStockQty(body.storeName, body.password, body.productId, body.colorNum, body.size, body.newQty); break;
     default:                     out = { success: false, error: 'Unknown action: ' + action };
@@ -593,6 +594,33 @@ function notifyOwner(orderData, orderId, dateStr) {
     + 'Open your Employee Dashboard to manage this order.',
     { name: BUSINESS_NAME + ' – Order System' }
   );
+}
+
+// ─── SELL FROM RETAIL STORE ───────────────────────────────────
+function sellRetailStock(storeName, password, rowId, qty) {
+  var validPass = (RETAIL_PASSWORDS[storeName] && password === RETAIL_PASSWORDS[storeName])
+               || password === EMPLOYEE_PASS;
+  if (!validPass) return { success: false, error: 'Wrong password.' };
+  try {
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(storeName + ' Stock');
+    if (!sheet) return { success: false, error: 'Store sheet not found.' };
+    var data  = sheet.getDataRange().getValues();
+    var sellQ = parseInt(qty) || 0;
+    if (sellQ <= 0) return { success: false, error: 'Quantity must be at least 1.' };
+    for (var r = 1; r < data.length; r++) {
+      if (String(data[r][0]).trim().toUpperCase() === String(rowId).trim().toUpperCase()) {
+        var cur    = parseInt(data[r][5]) || 0;
+        if (cur < sellQ) return { success: false, error: 'Not enough stock. Available: ' + cur };
+        var newQty = cur - sellQ;
+        sheet.getRange(r + 1, 6).setValue(newQty);
+        return { success: true, newQty: newQty };
+      }
+    }
+    return { success: false, error: 'ID not found: ' + rowId };
+  } catch(e) {
+    return { success: false, error: e.toString() };
+  }
 }
 
 // ─── VERIFY RETAIL STORE LOGIN ────────────────────────────────

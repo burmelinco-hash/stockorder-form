@@ -302,7 +302,8 @@ tbody tr:last-child td{border-bottom:none}
     </div>
     <div class="sp-tabs">
       <button class="sp-tab active" id="sp-tab-mystock" onclick="switchStoreTab('mystock')">📦 My Stock</button>
-      <button class="sp-tab" id="sp-tab-other" onclick="switchStoreTab('other')">🏬 Check Other Stores</button>
+      <button class="sp-tab" id="sp-tab-sell" onclick="switchStoreTab('sell')">💸 Sell</button>
+      <button class="sp-tab" id="sp-tab-other" onclick="switchStoreTab('other')">🏬 Other Stores</button>
     </div>
     <div class="sp-body" id="sp-body"></div>
   </div>
@@ -339,7 +340,7 @@ var API_URL = 'https://script.google.com/macros/s/AKfycby-5YfvPpePbg1ni36sL5AI-D
 (function(){
   if (typeof google !== 'undefined' && google.script && google.script.run) return;
   var GET_ACTIONS = { getBusinessName:1, getInventory:1, getAllRetailStock:1 };
-  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'] };
+  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'] };
   function makeRunner(){ var onOk=null,onErr=null; var runner={ withSuccessHandler:function(cb){onOk=cb;return runner;}, withFailureHandler:function(cb){onErr=cb;return runner;} }; function attach(name){ runner[name]=function(){ var args=arguments,req; if(GET_ACTIONS[name]){ req=fetch(API_URL+'?action='+encodeURIComponent(name)); }else{ var payload={action:name}; (POST_ARGS[name]||[]).forEach(function(k,i){payload[k]=args[i];}); req=fetch(API_URL,{method:'POST',body:JSON.stringify(payload)}); } req.then(function(r){return r.json();}).then(function(res){if(onOk)onOk(res);}).catch(function(err){if(onErr)onErr(err);}); }; } Object.keys(GET_ACTIONS).forEach(attach); Object.keys(POST_ARGS).forEach(attach); return runner; }
   window.google=window.google||{}; window.google.script=window.google.script||{}; Object.defineProperty(window.google.script,'run',{get:makeRunner});
 })();
@@ -983,120 +984,109 @@ function exitStorePanel() {
 }
 
 function switchStoreTab(tab) {
-  document.getElementById('sp-tab-mystock').classList.toggle('active', tab === 'mystock');
-  document.getElementById('sp-tab-other').classList.toggle('active', tab === 'other');
+  ['mystock','sell','other'].forEach(function(t) {
+    var el = document.getElementById('sp-tab-' + t);
+    if (el) el.classList.toggle('active', t === tab);
+  });
   if (tab === 'mystock') renderMyStock();
+  else if (tab === 'sell') renderSellTab();
   else renderOtherStores();
 }
 
-// ─── MY STOCK TAB ────────────────────────────────────────────
-function rsq(v) { return String(v||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
-
+// ─── MY STOCK TAB (flat list) ────────────────────────────────
 function myStockBadge(qty) {
   return qty === 0 ? 'rs-out' : qty <= 3 ? 'rs-low' : 'rs-ok';
 }
 
+function flatRows(inv) {
+  var rows = [];
+  if (!inv) return rows;
+  Object.keys(inv).forEach(function(pid) {
+    Object.keys(inv[pid]).forEach(function(colorKey) {
+      var cn = colorKey.replace(/^Color\s*/i, '');
+      Object.keys(inv[pid][colorKey]).forEach(function(size) {
+        rows.push({ id: pid + cn + size, qty: parseInt(inv[pid][colorKey][size]) || 0 });
+      });
+    });
+  });
+  return rows;
+}
+
 function renderMyStock() {
   var inv  = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name];
-  var pids = inv ? Object.keys(inv) : [];
-  var html = '<input type="text" class="rs-search" id="ms-search" placeholder="🔍 Search product ID…" oninput="filterMyStock(this.value)">';
-  html += '<div id="ms-list">' + buildMyStockList(pids, inv) + '</div>';
+  var html = '<input type="text" class="rs-search" id="ms-search" placeholder="🔍 Search by ID…" oninput="filterMyStock(this.value)">';
+  html += '<div id="ms-list" style="border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">' + buildMyStockList(flatRows(inv), '') + '</div>';
   document.getElementById('sp-body').innerHTML = html;
 }
 
-function buildMyStockList(pids, inv) {
-  if (!pids || !pids.length) return '<div class="sp-empty">No stock data found.</div>';
-  return pids.map(function(pid) {
-    var colors = Object.keys(inv[pid]);
-    var colorHtml = colors.map(function(color) {
-      var cn   = color.replace(/^Color\s*/i, '');
-      var sizes = inv[pid][color];
-      var sizeHtml = Object.keys(sizes).map(function(size) {
-        var qty   = parseInt(sizes[size]) || 0;
-        var cls   = myStockBadge(qty);
-        var cellId = 'rsc-' + rsq(pid).replace(/[^a-zA-Z0-9]/g,'_') + '-' + cn.replace(/[^a-zA-Z0-9]/g,'_') + '-' + size.replace(/[^a-zA-Z0-9]/g,'_');
-        return '<div class="rs-size-cell">'
-          + '<div class="rs-size-lbl">' + size + '</div>'
-          + '<div id="' + cellId + '">'
-          + '<span class="rs-badge ' + cls + '">' + qty + '</span>'
-          + ' <button class="btn-rs-edit" onclick="editRsQty(\'' + rsq(pid) + '\',\'' + rsq(cn) + '\',\'' + rsq(size) + '\',\'' + cellId + '\')">✎</button>'
-          + '</div></div>';
-      }).join('');
-      return '<div class="rs-color-row">'
-        + '<div class="rs-color-label">' + color + '</div>'
-        + '<div class="rs-size-row">' + sizeHtml + '</div>'
-        + '</div>';
-    }).join('');
-    return '<div class="rs-prod-card"><div class="rs-prod-head">' + pid + '</div>' + colorHtml + '</div>';
+function buildMyStockList(rows, q) {
+  if (!rows || !rows.length) return '<div class="sp-empty">No stock data found.</div>';
+  var filtered = q ? rows.filter(function(r){ return r.id.toLowerCase().indexOf(q.toLowerCase()) !== -1; }) : rows;
+  if (!filtered.length) return '<div class="sp-empty">No results for "' + q + '"</div>';
+  return filtered.map(function(r, i) {
+    var cls = myStockBadge(r.qty);
+    var border = i < filtered.length - 1 ? 'border-bottom:1px solid #f0f2f5;' : '';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;' + border + '">'
+      + '<span style="font-size:.9rem;font-weight:600;color:#1a1a2e;font-family:monospace">' + r.id + '</span>'
+      + '<span class="rs-badge ' + cls + '">' + r.qty + '</span>'
+      + '</div>';
   }).join('');
 }
 
 function filterMyStock(q) {
-  q = q.trim().toLowerCase();
   var inv  = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name];
-  var pids = inv ? Object.keys(inv).filter(function(p){ return !q || p.toLowerCase().indexOf(q) !== -1; }) : [];
-  document.getElementById('ms-list').innerHTML = buildMyStockList(pids, inv);
+  document.getElementById('ms-list').innerHTML = buildMyStockList(flatRows(inv), q);
 }
 
-function editRsQty(pid, cn, size, cellId) {
-  var cell = document.getElementById(cellId);
-  if (!cell) return;
-  var badge   = cell.querySelector('.rs-badge');
-  var current = badge ? parseInt(badge.textContent) || 0 : 0;
-  cell.innerHTML = '<span class="rs-edit-wrap">'
-    + '<input class="rs-edit-inp" id="' + cellId + '-i" type="number" min="0" value="' + current + '"'
-    + ' data-pid="' + pid.replace(/"/g,'&quot;') + '" data-cn="' + cn.replace(/"/g,'&quot;') + '" data-sz="' + size.replace(/"/g,'&quot;') + '">'
-    + '<button class="rs-ok-btn" onclick="saveRsQty(\'' + cellId + '\')">✓</button>'
-    + '<button class="rs-cx-btn" onclick="cancelRsQty(\'' + cellId + '\',' + current + ',\'' + rsq(pid) + '\',\'' + rsq(cn) + '\',\'' + rsq(size) + '\')">✕</button>'
-    + '</span>';
-  var inp = document.getElementById(cellId + '-i');
-  if (inp) { inp.focus(); inp.select(); }
+// ─── SELL TAB ────────────────────────────────────────────────
+function renderSellTab() {
+  document.getElementById('sp-body').innerHTML =
+    '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:6px">Product ID (from label)</label>'
+    + '<input id="sell-id" type="text" placeholder="e.g. T90274352" autocomplete="off" autocapitalize="characters"'
+    + ' style="width:100%;padding:13px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:1.05rem;font-family:monospace;margin-bottom:14px;text-transform:uppercase"'
+    + ' oninput="this.value=this.value.toUpperCase()" onkeydown="if(event.key===\'Enter\')doSell()">'
+    + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:6px">Quantity to sell</label>'
+    + '<input id="sell-qty" type="number" min="1" value="1"'
+    + ' style="width:100%;padding:13px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:1.05rem;font-family:inherit;margin-bottom:16px"'
+    + ' onkeydown="if(event.key===\'Enter\')doSell()">'
+    + '<button onclick="doSell()" style="width:100%;padding:14px;background:#dc2626;color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer">💸 Sell</button>'
+    + '<div id="sell-result" style="margin-top:14px;text-align:center;font-size:.92rem;min-height:24px"></div>';
+  document.getElementById('sell-id').focus();
 }
 
-function saveRsQty(cellId) {
-  var inp = document.getElementById(cellId + '-i');
-  if (!inp) return;
-  var pid = inp.getAttribute('data-pid');
-  var cn  = inp.getAttribute('data-cn');
-  var sz  = inp.getAttribute('data-sz');
-  var qty = parseInt(inp.value);
-  if (isNaN(qty) || qty < 0) { inp.focus(); return; }
-
-  var cell = document.getElementById(cellId);
-  if (cell) cell.innerHTML = '<span style="color:#aaa;font-size:.78rem">Saving…</span>';
-
+function doSell() {
+  var rowId = (document.getElementById('sell-id').value || '').trim().toUpperCase();
+  var qty   = parseInt(document.getElementById('sell-qty').value) || 0;
+  var resEl = document.getElementById('sell-result');
+  if (!rowId) { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter a product ID.</span>'; return; }
+  if (qty <= 0) { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Quantity must be at least 1.</span>'; return; }
+  resEl.innerHTML = '<span style="color:#888">Processing…</span>';
   google.script.run
-    .withSuccessHandler(function(result) {
-      var colorKey = 'Color ' + cn;
-      if (result.success) {
-        if (ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name] &&
-            ALL_RETAIL_STOCK[SESSION_STORE.name][pid] &&
-            ALL_RETAIL_STOCK[SESSION_STORE.name][pid][colorKey]) {
-          ALL_RETAIL_STOCK[SESSION_STORE.name][pid][colorKey][sz] = qty;
+    .withSuccessHandler(function(r) {
+      if (r.success) {
+        var inv = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name];
+        if (inv) {
+          Object.keys(inv).forEach(function(pid) {
+            Object.keys(inv[pid]).forEach(function(colorKey) {
+              var cn = colorKey.replace(/^Color\s*/i, '');
+              Object.keys(inv[pid][colorKey]).forEach(function(size) {
+                if ((pid + cn + size).toUpperCase() === rowId) inv[pid][colorKey][size] = r.newQty;
+              });
+            });
+          });
         }
-        var cls = myStockBadge(qty);
-        var c = document.getElementById(cellId);
-        if (c) c.innerHTML = '<span class="rs-badge ' + cls + '">' + qty + '</span>'
-          + ' <button class="btn-rs-edit" onclick="editRsQty(\'' + rsq(pid) + '\',\'' + rsq(cn) + '\',\'' + rsq(sz) + '\',\'' + cellId + '\')">✎</button>';
+        resEl.innerHTML = '<span style="color:#16a34a;font-weight:700">✓ Sold ' + qty + ' — New stock: ' + r.newQty + '</span>';
+        document.getElementById('sell-id').value = '';
+        document.getElementById('sell-qty').value = '1';
+        document.getElementById('sell-id').focus();
       } else {
-        var c2 = document.getElementById(cellId);
-        if (c2) c2.innerHTML = '<span style="color:#b91c1c;font-size:.78rem">⚠ Error</span>'
-          + ' <button class="btn-rs-edit" onclick="editRsQty(\'' + rsq(pid) + '\',\'' + rsq(cn) + '\',\'' + rsq(sz) + '\',\'' + cellId + '\')">Retry</button>';
+        resEl.innerHTML = '<span style="color:#b91c1c">❌ ' + (r.error || 'Error') + '</span>';
       }
     })
     .withFailureHandler(function() {
-      var c3 = document.getElementById(cellId);
-      if (c3) c3.innerHTML = '<span style="color:#b91c1c;font-size:.78rem">⚠ Failed</span>'
-        + ' <button class="btn-rs-edit" onclick="editRsQty(\'' + rsq(pid) + '\',\'' + rsq(cn) + '\',\'' + rsq(sz) + '\',\'' + cellId + '\')">Retry</button>';
+      resEl.innerHTML = '<span style="color:#b91c1c">❌ Connection error. Try again.</span>';
     })
-    .updateRetailStockQty(SESSION_STORE.name, SESSION_STORE.pass, pid, cn, sz, qty);
-}
-
-function cancelRsQty(cellId, orig, pid, cn, sz) {
-  var cls = myStockBadge(orig);
-  var c = document.getElementById(cellId);
-  if (c) c.innerHTML = '<span class="rs-badge ' + cls + '">' + orig + '</span>'
-    + ' <button class="btn-rs-edit" onclick="editRsQty(\'' + rsq(pid) + '\',\'' + rsq(cn) + '\',\'' + rsq(sz) + '\',\'' + cellId + '\')">✎</button>';
+    .sellRetailStock(SESSION_STORE.name, SESSION_STORE.pass, rowId, qty);
 }
 
 // ─── OTHER STORES TAB ────────────────────────────────────────
