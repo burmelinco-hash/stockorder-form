@@ -303,6 +303,7 @@ tbody tr:last-child td{border-bottom:none}
     <div class="sp-tabs">
       <button class="sp-tab active" id="sp-tab-mystock" onclick="switchStoreTab('mystock')">📦 My Stock</button>
       <button class="sp-tab" id="sp-tab-sell" onclick="switchStoreTab('sell')">💸 Sell</button>
+      <button class="sp-tab" id="sp-tab-transfer" onclick="switchStoreTab('transfer')">↔ Transfer</button>
       <button class="sp-tab" id="sp-tab-other" onclick="switchStoreTab('other')">🏬 Other Stores</button>
     </div>
     <div class="sp-body" id="sp-body"></div>
@@ -340,7 +341,7 @@ var API_URL = 'https://script.google.com/macros/s/AKfycby-5YfvPpePbg1ni36sL5AI-D
 (function(){
   if (typeof google !== 'undefined' && google.script && google.script.run) return;
   var GET_ACTIONS = { getBusinessName:1, getInventory:1, getAllRetailStock:1 };
-  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'] };
+  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'] };
   function makeRunner(){ var onOk=null,onErr=null; var runner={ withSuccessHandler:function(cb){onOk=cb;return runner;}, withFailureHandler:function(cb){onErr=cb;return runner;} }; function attach(name){ runner[name]=function(){ var args=arguments,req; if(GET_ACTIONS[name]){ req=fetch(API_URL+'?action='+encodeURIComponent(name)); }else{ var payload={action:name}; (POST_ARGS[name]||[]).forEach(function(k,i){payload[k]=args[i];}); req=fetch(API_URL,{method:'POST',body:JSON.stringify(payload)}); } req.then(function(r){return r.json();}).then(function(res){if(onOk)onOk(res);}).catch(function(err){if(onErr)onErr(err);}); }; } Object.keys(GET_ACTIONS).forEach(attach); Object.keys(POST_ARGS).forEach(attach); return runner; }
   window.google=window.google||{}; window.google.script=window.google.script||{}; Object.defineProperty(window.google.script,'run',{get:makeRunner});
 })();
@@ -983,13 +984,16 @@ function exitStorePanel() {
   document.getElementById('sli-store').value = '';
 }
 
+var ALL_STORES = ['Bicasso 1','Bicasso 2','Bicasso Nana','Palladium'];
+
 function switchStoreTab(tab) {
-  ['mystock','sell','other'].forEach(function(t) {
+  ['mystock','sell','transfer','other'].forEach(function(t) {
     var el = document.getElementById('sp-tab-' + t);
     if (el) el.classList.toggle('active', t === tab);
   });
   if (tab === 'mystock') renderMyStock();
   else if (tab === 'sell') renderSellTab();
+  else if (tab === 'transfer') renderTransferTab();
   else renderOtherStores();
 }
 
@@ -1089,9 +1093,86 @@ function doSell() {
     .sellRetailStock(SESSION_STORE.name, SESSION_STORE.pass, rowId, qty);
 }
 
+// ─── TRANSFER TAB ────────────────────────────────────────────
+function renderTransferTab() {
+  var storeOpts = ALL_STORES.map(function(s) {
+    return '<option value="' + s + '">' + s + '</option>';
+  }).join('');
+  var myStore = SESSION_STORE ? SESSION_STORE.name : '';
+  var toOpts  = ALL_STORES.map(function(s) {
+    return '<option value="' + s + '"' + (s === myStore ? ' selected' : '') + '>' + s + '</option>';
+  }).join('');
+  document.getElementById('sp-body').innerHTML =
+    '<div style="background:#fef9c3;border-radius:8px;padding:10px 12px;font-size:.82rem;color:#92400e;margin-bottom:14px">🔐 Manager password required to transfer stock.</div>'
+    + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">From store</label>'
+    + '<select id="tr-from" style="width:100%;padding:11px 12px;border:2px solid #e2e8f0;border-radius:9px;font-size:.95rem;margin-bottom:12px">' + storeOpts + '</select>'
+    + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">To store</label>'
+    + '<select id="tr-to" style="width:100%;padding:11px 12px;border:2px solid #e2e8f0;border-radius:9px;font-size:.95rem;margin-bottom:12px">' + toOpts + '</select>'
+    + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">Product ID</label>'
+    + '<input id="tr-id" type="text" placeholder="e.g. T90274352" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()"'
+    + ' style="width:100%;padding:12px 14px;border:2px solid #e2e8f0;border-radius:9px;font-size:1rem;font-family:monospace;margin-bottom:12px;text-transform:uppercase">'
+    + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">Quantity</label>'
+    + '<input id="tr-qty" type="number" min="1" value="1" style="width:100%;padding:12px 14px;border:2px solid #e2e8f0;border-radius:9px;font-size:1rem;margin-bottom:12px">'
+    + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">Manager password</label>'
+    + '<input id="tr-pass" type="password" placeholder="Enter manager password"'
+    + ' style="width:100%;padding:12px 14px;border:2px solid #e2e8f0;border-radius:9px;font-size:1rem;margin-bottom:16px" onkeydown="if(event.key===\'Enter\')doTransfer()">'
+    + '<button onclick="doTransfer()" style="width:100%;padding:14px;background:#7c3aed;color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer">↔ Transfer Stock</button>'
+    + '<div id="tr-result" style="margin-top:14px;text-align:center;font-size:.92rem;min-height:24px"></div>';
+}
+
+function doTransfer() {
+  var fromStore = document.getElementById('tr-from').value;
+  var toStore   = document.getElementById('tr-to').value;
+  var rowId     = (document.getElementById('tr-id').value || '').trim().toUpperCase();
+  var qty       = parseInt(document.getElementById('tr-qty').value) || 0;
+  var pass      = document.getElementById('tr-pass').value;
+  var resEl     = document.getElementById('tr-result');
+  if (fromStore === toStore) { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Source and destination must differ.</span>'; return; }
+  if (!rowId) { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter a product ID.</span>'; return; }
+  if (qty <= 0) { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Quantity must be at least 1.</span>'; return; }
+  if (!pass)  { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter manager password.</span>'; return; }
+  resEl.innerHTML = '<span style="color:#888">Transferring…</span>';
+  google.script.run
+    .withSuccessHandler(function(r) {
+      if (r.success) {
+        if (ALL_RETAIL_STOCK) {
+          if (ALL_RETAIL_STOCK[fromStore]) {
+            Object.keys(ALL_RETAIL_STOCK[fromStore]).forEach(function(pid) {
+              Object.keys(ALL_RETAIL_STOCK[fromStore][pid]).forEach(function(colorKey) {
+                var cn = colorKey.replace(/^Color\s*/i,'');
+                Object.keys(ALL_RETAIL_STOCK[fromStore][pid][colorKey]).forEach(function(size) {
+                  if ((pid+cn+size).toUpperCase() === rowId) ALL_RETAIL_STOCK[fromStore][pid][colorKey][size] = r.fromNewQty;
+                });
+              });
+            });
+          }
+          if (ALL_RETAIL_STOCK[toStore]) {
+            Object.keys(ALL_RETAIL_STOCK[toStore]).forEach(function(pid) {
+              Object.keys(ALL_RETAIL_STOCK[toStore][pid]).forEach(function(colorKey) {
+                var cn = colorKey.replace(/^Color\s*/i,'');
+                Object.keys(ALL_RETAIL_STOCK[toStore][pid][colorKey]).forEach(function(size) {
+                  if ((pid+cn+size).toUpperCase() === rowId) ALL_RETAIL_STOCK[toStore][pid][colorKey][size] = r.toNewQty;
+                });
+              });
+            });
+          }
+        }
+        resEl.innerHTML = '<span style="color:#16a34a;font-weight:700">✓ Transferred ' + qty + ' from ' + fromStore + ' to ' + toStore + '</span>'
+          + '<br><span style="color:#555;font-size:.85rem">' + fromStore + ': ' + r.fromNewQty + ' left &nbsp;|&nbsp; ' + toStore + ': ' + r.toNewQty + ' now</span>';
+        document.getElementById('tr-id').value = '';
+        document.getElementById('tr-qty').value = '1';
+        document.getElementById('tr-pass').value = '';
+      } else {
+        resEl.innerHTML = '<span style="color:#b91c1c">❌ ' + (r.error || 'Error') + '</span>';
+      }
+    })
+    .withFailureHandler(function() { resEl.innerHTML = '<span style="color:#b91c1c">❌ Connection error.</span>'; })
+    .transferStock(fromStore, toStore, pass, rowId, qty);
+}
+
 // ─── OTHER STORES TAB ────────────────────────────────────────
 function renderOtherStores() {
-  var allLoaded = ['Bicasso 1','Bicasso 2','Bicasso Nana'].every(function(s){ return ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[s]; });
+  var allLoaded = ALL_STORES.every(function(s){ return ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[s]; });
   if (!allLoaded) {
     document.getElementById('sp-body').innerHTML = '<div style="text-align:center;padding:40px;color:#888"><div class="spinner"></div><br><br>Loading other stores…</div>';
     google.script.run
@@ -1127,7 +1208,7 @@ function csSearch(q) {
 
   // Collect all product IDs across all stores
   var pidSet = {};
-  ['Bicasso 1','Bicasso 2','Bicasso Nana'].forEach(function(s) {
+  ALL_STORES.forEach(function(s) {
     if (ALL_RETAIL_STOCK[s]) Object.keys(ALL_RETAIL_STOCK[s]).forEach(function(p){ pidSet[p]=1; });
   });
   var matches = Object.keys(pidSet).filter(function(p){ return p.toLowerCase().indexOf(q) !== -1; });
@@ -1151,7 +1232,7 @@ document.addEventListener('click', function(e){
 });
 
 function showCsResult(pid) {
-  var storeNames = ['Bicasso 1','Bicasso 2','Bicasso Nana'];
+  var storeNames = ALL_STORES;
   // Collect all colors and sizes for this product across all stores
   var colorSet = {}, colorOrder = [];
   storeNames.forEach(function(s) {

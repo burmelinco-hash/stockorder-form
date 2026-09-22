@@ -69,6 +69,7 @@ function handleApi(action, params, body) {
     case 'getAllRetailStock':     out = getAllRetailStock(); break;
     case 'getStoreStock':        out = getRetailStock(body && body.storeName); break;
     case 'sellRetailStock':      out = sellRetailStock(body.storeName, body.password, body.rowId, body.qty); break;
+    case 'transferStock':        out = transferStock(body.fromStore, body.toStore, body.password, body.rowId, body.qty); break;
     case 'verifyRetailStore':    out = verifyRetailStore(body.storeName, body.password); break;
     case 'updateRetailStockQty': out = updateRetailStockQty(body.storeName, body.password, body.productId, body.colorNum, body.size, body.newQty); break;
     default:                     out = { success: false, error: 'Unknown action: ' + action };
@@ -596,6 +597,41 @@ function notifyOwner(orderData, orderId, dateStr) {
   );
 }
 
+// ─── TRANSFER STOCK BETWEEN STORES ───────────────────────────
+function transferStock(fromStore, toStore, password, rowId, qty) {
+  if (password !== EMPLOYEE_PASS) return { success: false, error: 'Manager password required.' };
+  if (!fromStore || !toStore) return { success: false, error: 'Select both stores.' };
+  if (fromStore === toStore) return { success: false, error: 'Source and destination must differ.' };
+  var sellQ = parseInt(qty) || 0;
+  if (sellQ <= 0) return { success: false, error: 'Quantity must be at least 1.' };
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    function sheetFor(name) {
+      return ss.getSheetByName(name === 'Palladium' ? INVENTORY_SHEET_NAME : name + ' Stock');
+    }
+    var fromSheet = sheetFor(fromStore);
+    var toSheet   = sheetFor(toStore);
+    if (!fromSheet) return { success: false, error: 'Sheet not found for: ' + fromStore };
+    if (!toSheet)   return { success: false, error: 'Sheet not found for: ' + toStore };
+    function findRow(sheet) {
+      var data = sheet.getDataRange().getValues();
+      for (var r = 1; r < data.length; r++) {
+        if (String(data[r][0]).trim().toUpperCase() === String(rowId).trim().toUpperCase())
+          return { row: r + 1, qty: parseInt(data[r][5]) || 0 };
+      }
+      return null;
+    }
+    var from = findRow(fromSheet);
+    if (!from) return { success: false, error: 'ID not found in ' + fromStore + ': ' + rowId };
+    if (from.qty < sellQ) return { success: false, error: 'Not enough stock in ' + fromStore + '. Available: ' + from.qty };
+    var to = findRow(toSheet);
+    if (!to) return { success: false, error: 'ID not found in ' + toStore + ': ' + rowId };
+    fromSheet.getRange(from.row, 6).setValue(from.qty - sellQ);
+    toSheet.getRange(to.row, 6).setValue(to.qty + sellQ);
+    return { success: true, fromNewQty: from.qty - sellQ, toNewQty: to.qty + sellQ };
+  } catch(e) { return { success: false, error: e.toString() }; }
+}
+
 // ─── SELL FROM RETAIL STORE ───────────────────────────────────
 function sellRetailStock(storeName, password, rowId, qty) {
   var validPass = (RETAIL_PASSWORDS[storeName] && password === RETAIL_PASSWORDS[storeName])
@@ -639,14 +675,14 @@ function getAllRetailStock() {
 function getRetailStock(storeName) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var storeNames = storeName ? [storeName] : ['Bicasso 1', 'Bicasso 2', 'Bicasso Nana'];
+    var storeNames = storeName ? [storeName] : ['Bicasso 1', 'Bicasso 2', 'Bicasso Nana', 'Palladium'];
     var storesData = {};
 
     storeNames.forEach(function(name) {
-      var sheetName = name + ' Stock';
+      var sheetName = name === 'Palladium' ? INVENTORY_SHEET_NAME : name + ' Stock';
       var sheet = ss.getSheetByName(sheetName);
-      // Auto-create sheet from wholesale product list if missing
-      if (!sheet) sheet = createRetailSheet(ss, sheetName);
+      // Auto-create sheet from wholesale product list if missing (not for Palladium)
+      if (!sheet && name !== 'Palladium') sheet = createRetailSheet(ss, sheetName);
       var inventory = {};
 
       if (sheet && sheet.getLastRow() > 1) {
