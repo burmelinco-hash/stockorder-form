@@ -212,6 +212,7 @@ tbody tr:last-child td{border-bottom:none}
           <button class="mstab active" id="sp-tab-mystock" onclick="switchStoreTab('mystock')">📦 Stock</button>
           <button class="mstab" id="sp-tab-sell" onclick="switchStoreTab('sell')">💸 Sell</button>
           <button class="mstab" id="sp-tab-transfer" onclick="switchStoreTab('transfer')">↔ Transfer</button>
+          <button class="mstab" id="sp-tab-addstock" onclick="switchStoreTab('addstock')">＋ Add</button>
         </div>
         <div id="sp-body"></div>
       </div>
@@ -455,13 +456,14 @@ function loadStoreStock() {
 
 // ── STORE TABS ────────────────────────────────────────────────────
 function switchStoreTab(tab) {
-  ['mystock','sell','transfer'].forEach(function(t) {
+  ['mystock','sell','transfer','addstock'].forEach(function(t) {
     var el = document.getElementById('sp-tab-' + t);
     if (el) el.classList.toggle('active', t === tab);
   });
   if (tab === 'mystock') renderMyStock();
   else if (tab === 'sell') renderSellTab();
   else if (tab === 'transfer') renderTransferTab();
+  else if (tab === 'addstock') renderAddStockTab();
 }
 
 // ── MY STOCK ──────────────────────────────────────────────────────
@@ -476,7 +478,7 @@ function flatRows(inv) {
     Object.keys(inv[pid]).forEach(function(colorKey) {
       var cn = colorKey.replace(/^Color\s*/i, '');
       Object.keys(inv[pid][colorKey]).forEach(function(size) {
-        rows.push({ id: pid + cn + size, qty: parseInt(inv[pid][colorKey][size]) || 0 });
+        rows.push({ pid: pid, cn: cn, size: size, qty: parseInt(inv[pid][colorKey][size]) || 0 });
       });
     });
   });
@@ -486,23 +488,34 @@ function flatRows(inv) {
 function renderMyStock() {
   if (!SESSION_STORE) return;
   var inv  = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name];
-  var html = '<input type="text" class="rs-search" id="ms-search" placeholder="🔍 Search by ID…" oninput="filterMyStock(this.value)">';
+  var html = '<input type="text" class="rs-search" id="ms-search" placeholder="🔍 Search by ID, color or size…" oninput="filterMyStock(this.value)">';
   html += '<div id="ms-list" style="border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">' + buildMyStockList(flatRows(inv), '') + '</div>';
   document.getElementById('sp-body').innerHTML = html;
 }
 
 function buildMyStockList(rows, q) {
   if (!rows || !rows.length) return '<div class="sp-empty">No stock data found.</div>';
-  var filtered = q ? rows.filter(function(r){ return r.id.toLowerCase().indexOf(q.toLowerCase()) !== -1; }) : rows;
+  var filtered = q ? rows.filter(function(r){
+    var combined = (r.pid + r.cn + r.size).toLowerCase();
+    return combined.indexOf(q.toLowerCase()) !== -1;
+  }) : rows;
   if (!filtered.length) return '<div class="sp-empty">No results for "' + q + '"</div>';
-  return filtered.map(function(r, i) {
+  var header = '<thead><tr style="background:#1a1a2e">'
+    + '<th style="padding:9px 12px;text-align:left;font-size:.72rem;text-transform:uppercase;color:#9ca3af;font-weight:700;letter-spacing:.05em">ID</th>'
+    + '<th style="padding:9px 10px;text-align:center;font-size:.72rem;text-transform:uppercase;color:#9ca3af;font-weight:700;letter-spacing:.05em">Color</th>'
+    + '<th style="padding:9px 10px;text-align:center;font-size:.72rem;text-transform:uppercase;color:#9ca3af;font-weight:700;letter-spacing:.05em">Size</th>'
+    + '<th style="padding:9px 12px;text-align:center;font-size:.72rem;text-transform:uppercase;color:#9ca3af;font-weight:700;letter-spacing:.05em">Qty</th>'
+    + '</tr></thead>';
+  var body = '<tbody>' + filtered.map(function(r) {
     var cls = myStockBadge(r.qty);
-    var border = i < filtered.length - 1 ? 'border-bottom:1px solid #f0f2f5;' : '';
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;' + border + '">'
-      + '<span style="font-size:.9rem;font-weight:600;color:#1a1a2e;font-family:monospace">' + r.id + '</span>'
-      + '<span class="rs-badge ' + cls + '">' + r.qty + '</span>'
-      + '</div>';
-  }).join('');
+    return '<tr style="border-bottom:1px solid #f0f2f5">'
+      + '<td style="padding:9px 12px;font-size:.88rem;font-weight:700;color:#1a1a2e;font-family:monospace">' + r.pid + '</td>'
+      + '<td style="padding:9px 10px;text-align:center;font-size:.88rem;color:#555">' + r.cn + '</td>'
+      + '<td style="padding:9px 10px;text-align:center;font-size:.88rem;color:#555">' + r.size + '</td>'
+      + '<td style="padding:9px 12px;text-align:center"><span class="rs-badge ' + cls + '">' + r.qty + '</span></td>'
+      + '</tr>';
+  }).join('') + '</tbody>';
+  return '<table style="width:100%;border-collapse:collapse">' + header + body + '</table>';
 }
 
 function filterMyStock(q) {
@@ -563,12 +576,13 @@ function doSell() {
 
 // ── TRANSFER TAB ──────────────────────────────────────────────────
 function renderTransferTab() {
-  var storeOpts = ALL_STORES.map(function(s){ return '<option value="' + s + '">' + s + '</option>'; }).join('');
   var myStore = SESSION_STORE ? SESSION_STORE.name : '';
-  var toOpts  = ALL_STORES.map(function(s){ return '<option value="' + s + '"' + (s === myStore ? ' selected' : '') + '>' + s + '</option>'; }).join('');
+  var RETAIL_STORES = ['Bicasso 1','Bicasso 2','Bicasso Nana'];
+  var toOpts = RETAIL_STORES.filter(function(s){ return s !== myStore; })
+    .map(function(s){ return '<option value="' + s + '">' + s + '</option>'; }).join('');
   document.getElementById('sp-body').innerHTML =
     '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">From store</label>'
-    + '<select id="tr-from" style="width:100%;padding:11px 12px;border:2px solid #e2e8f0;border-radius:9px;font-size:.95rem;margin-bottom:12px">' + storeOpts + '</select>'
+    + '<div style="width:100%;padding:11px 14px;border:2px solid #e2e8f0;border-radius:9px;font-size:.95rem;margin-bottom:12px;background:#f8fafc;color:#1a1a2e;font-weight:700">' + myStore + '</div>'
     + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">To store</label>'
     + '<select id="tr-to" style="width:100%;padding:11px 12px;border:2px solid #e2e8f0;border-radius:9px;font-size:.95rem;margin-bottom:12px">' + toOpts + '</select>'
     + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">Product ID</label>'
@@ -581,7 +595,7 @@ function renderTransferTab() {
 }
 
 function doTransfer() {
-  var fromStore = document.getElementById('tr-from').value;
+  var fromStore = SESSION_STORE ? SESSION_STORE.name : '';
   var toStore   = document.getElementById('tr-to').value;
   var rowId     = (document.getElementById('tr-id').value || '').trim().toUpperCase();
   var qty       = parseInt(document.getElementById('tr-qty').value) || 0;
@@ -618,6 +632,64 @@ function doTransfer() {
     })
     .withFailureHandler(function() { resEl.innerHTML = '<span style="color:#b91c1c">❌ Connection error.</span>'; })
     .transferStock(fromStore, toStore, '', rowId, qty);
+}
+
+// ── ADD STOCK TAB ─────────────────────────────────────────────────
+function renderAddStockTab() {
+  document.getElementById('sp-body').innerHTML =
+    '<div style="font-size:.82rem;color:#888;margin-bottom:14px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px">Enter the product details exactly as they appear on the label, then set the stock quantity.</div>'
+    + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">Product ID <span style="color:#888;font-weight:400">(e.g. T9027)</span></label>'
+    + '<input id="as-pid" type="text" placeholder="T9027" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()"'
+    + ' style="width:100%;padding:12px 14px;border:2px solid #e2e8f0;border-radius:9px;font-size:1rem;font-family:monospace;margin-bottom:12px;text-transform:uppercase">'
+    + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">Color # <span style="color:#888;font-weight:400">(e.g. 43)</span></label>'
+    + '<input id="as-color" type="text" placeholder="43"'
+    + ' style="width:100%;padding:12px 14px;border:2px solid #e2e8f0;border-radius:9px;font-size:1rem;font-family:monospace;margin-bottom:12px">'
+    + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">Size <span style="color:#888;font-weight:400">(e.g. 52)</span></label>'
+    + '<input id="as-size" type="text" placeholder="52"'
+    + ' style="width:100%;padding:12px 14px;border:2px solid #e2e8f0;border-radius:9px;font-size:1rem;font-family:monospace;margin-bottom:12px">'
+    + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">Quantity</label>'
+    + '<input id="as-qty" type="number" min="0" value="1"'
+    + ' style="width:100%;padding:12px 14px;border:2px solid #e2e8f0;border-radius:9px;font-size:1rem;margin-bottom:16px">'
+    + '<button onclick="doAddStock()" style="width:100%;padding:14px;background:#0ea5e9;color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer">＋ Save Stock</button>'
+    + '<div id="as-result" style="margin-top:14px;text-align:center;font-size:.92rem;min-height:24px"></div>';
+  document.getElementById('as-pid').focus();
+}
+
+function doAddStock() {
+  var pid   = (document.getElementById('as-pid').value || '').trim().toUpperCase();
+  var color = (document.getElementById('as-color').value || '').trim();
+  var size  = (document.getElementById('as-size').value || '').trim();
+  var qty   = parseInt(document.getElementById('as-qty').value);
+  var resEl = document.getElementById('as-result');
+  if (!pid)          { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter a product ID.</span>'; return; }
+  if (!color)        { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter a color number.</span>'; return; }
+  if (!size)         { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter a size.</span>'; return; }
+  if (isNaN(qty) || qty < 0) { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter a valid quantity.</span>'; return; }
+  resEl.innerHTML = '<span style="color:#888">Saving…</span>';
+  google.script.run
+    .withSuccessHandler(function(r) {
+      if (r.success) {
+        var colorKey = 'Color ' + color;
+        if (ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name]) {
+          var inv = ALL_RETAIL_STOCK[SESSION_STORE.name];
+          if (!inv[pid]) inv[pid] = {};
+          if (!inv[pid][colorKey]) inv[pid][colorKey] = {};
+          inv[pid][colorKey][size] = qty;
+        }
+        resEl.innerHTML = '<span style="color:#16a34a;font-weight:700">✓ ' + pid + ' / ' + color + ' / ' + size + ' → ' + qty + ' units saved</span>';
+        document.getElementById('as-pid').value = '';
+        document.getElementById('as-color').value = '';
+        document.getElementById('as-size').value = '';
+        document.getElementById('as-qty').value = '1';
+        document.getElementById('as-pid').focus();
+      } else {
+        resEl.innerHTML = '<span style="color:#b91c1c">❌ ' + (r.error || 'Error') + '</span>';
+      }
+    })
+    .withFailureHandler(function() {
+      resEl.innerHTML = '<span style="color:#b91c1c">❌ Connection error. Try again.</span>';
+    })
+    .updateRetailStockQty(SESSION_STORE.name, SESSION_STORE.pass, pid, color, size, qty);
 }
 
 // ── OTHER STORES ──────────────────────────────────────────────────
