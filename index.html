@@ -172,6 +172,10 @@ tbody tr:last-child td{border-bottom:none}
   .cs-store-row{flex-direction:column;align-items:flex-start;gap:4px}
   .cs-store-name{min-width:unset;font-size:.88rem}
 }
+/* ── TOAST ── */
+#app-toast{position:fixed;bottom:calc(64px + env(safe-area-inset-bottom,0px) + 12px);left:50%;transform:translateX(-50%) translateY(20px);background:#1a1a2e;color:#fff;padding:11px 18px;border-radius:10px;font-size:.88rem;font-weight:600;white-space:nowrap;z-index:9998;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;display:flex;align-items:center;gap:10px;box-shadow:0 4px 20px rgba(0,0,0,.35)}
+#app-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#app-toast button{background:rgba(255,255,255,.2);border:none;color:#fff;padding:4px 10px;border-radius:6px;font-size:.8rem;font-weight:700;cursor:pointer;pointer-events:all}
 </style>
 </head>
 <body>
@@ -344,6 +348,9 @@ tbody tr:last-child td{border-bottom:none}
   </nav>
 </div><!-- /screen-app -->
 
+<!-- Toast notification -->
+<div id="app-toast"></div>
+
 <!-- PDF overlay -->
 <div id="pdf-overlay">
   <div class="pdf-toolbar">
@@ -360,9 +367,20 @@ var API_URL = 'https://script.google.com/macros/s/AKfycby-5YfvPpePbg1ni36sL5AI-D
   if (typeof google !== 'undefined' && google.script && google.script.run) return;
   var GET_ACTIONS = { getBusinessName:1, getInventory:1, getAllRetailStock:1 };
   var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'] };
-  function makeRunner(){ var onOk=null,onErr=null; var runner={ withSuccessHandler:function(cb){onOk=cb;return runner;}, withFailureHandler:function(cb){onErr=cb;return runner;} }; function attach(name){ runner[name]=function(){ var args=arguments,req; if(GET_ACTIONS[name]){ req=fetch(API_URL+'?action='+encodeURIComponent(name)); }else{ var payload={action:name}; (POST_ARGS[name]||[]).forEach(function(k,i){payload[k]=args[i];}); req=fetch(API_URL,{method:'POST',body:JSON.stringify(payload)}); } req.then(function(r){return r.json();}).then(function(res){if(onOk)onOk(res);}).catch(function(err){if(onErr)onErr(err);}); }; } Object.keys(GET_ACTIONS).forEach(attach); Object.keys(POST_ARGS).forEach(attach); return runner; }
+  function makeRunner(){ var onOk=null,onErr=null; var runner={ withSuccessHandler:function(cb){onOk=cb;return runner;}, withFailureHandler:function(cb){onErr=cb;return runner;} }; function attach(name){ runner[name]=function(){ var args=arguments; function attempt(tries){ var req; if(GET_ACTIONS[name]){ req=fetch(API_URL+'?action='+encodeURIComponent(name)); }else{ var payload={action:name}; (POST_ARGS[name]||[]).forEach(function(k,i){payload[k]=args[i];}); req=fetch(API_URL,{method:'POST',body:JSON.stringify(payload)}); } req.then(function(r){return r.json();}).then(function(res){if(onOk)onOk(res);}).catch(function(err){ if(tries>0){ setTimeout(function(){attempt(tries-1);},1800); }else{ if(onErr)onErr(err); } }); } attempt(2); }; } Object.keys(GET_ACTIONS).forEach(attach); Object.keys(POST_ARGS).forEach(attach); return runner; }
   window.google=window.google||{}; window.google.script=window.google.script||{}; Object.defineProperty(window.google.script,'run',{get:makeRunner});
 })();
+
+// ── TOAST ─────────────────────────────────────────────────────────
+var _toastTimer = null;
+function showToast(msg, retryFn) {
+  var el = document.getElementById('app-toast');
+  if (!el) return;
+  el.innerHTML = '<span>' + msg + '</span>' + (retryFn ? '<button onclick="(' + retryFn.toString() + ')()">Retry</button>' : '');
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(function(){ el.classList.remove('show'); }, retryFn ? 6000 : 3000);
+}
 
 // ── STATE ─────────────────────────────────────────────────────────
 var INVENTORY       = {};
@@ -498,7 +516,8 @@ function loadStoreStock() {
       }
     })
     .withFailureHandler(function() {
-      document.getElementById('sp-body').innerHTML = '<div class="sp-empty">⚠ Connection error.</div>';
+      document.getElementById('sp-body').innerHTML = '<div class="sp-empty">⚠ Could not load stock.</div>';
+      showToast('Connection error — tap Retry', function(){ ALL_RETAIL_STOCK=null; loadStoreStock(); });
     })
     .getStoreStock(myStore);
 }
@@ -620,7 +639,8 @@ function doSell() {
       }
     })
     .withFailureHandler(function() {
-      resEl.innerHTML = '<span style="color:#b91c1c">❌ Connection error. Try again.</span>';
+      resEl.innerHTML = '<span style="color:#b91c1c">❌ Failed. Please try again.</span>';
+      showToast('Connection error — tap Retry', function(){ doSell(); });
     })
     .sellRetailStock(SESSION_STORE.name, SESSION_STORE.pass, rowId, qty);
 }
@@ -681,7 +701,10 @@ function doTransfer() {
         resEl.innerHTML = '<span style="color:#b91c1c">❌ ' + (r.error || 'Error') + '</span>';
       }
     })
-    .withFailureHandler(function() { resEl.innerHTML = '<span style="color:#b91c1c">❌ Connection error.</span>'; })
+    .withFailureHandler(function() {
+      resEl.innerHTML = '<span style="color:#b91c1c">❌ Failed. Please try again.</span>';
+      showToast('Connection error — tap Retry', function(){ doTransfer(); });
+    })
     .transferStock(fromStore, toStore, '', rowId, qty);
 }
 
@@ -738,7 +761,8 @@ function doAddStock() {
       }
     })
     .withFailureHandler(function() {
-      resEl.innerHTML = '<span style="color:#b91c1c">❌ Connection error. Try again.</span>';
+      resEl.innerHTML = '<span style="color:#b91c1c">❌ Failed. Please try again.</span>';
+      showToast('Connection error — tap Retry', function(){ doAddStock(); });
     })
     .updateRetailStockQty(SESSION_STORE.name, SESSION_STORE.pass, pid, color, size, qty);
 }
@@ -783,7 +807,10 @@ function renderOtherStores() {
           el.innerHTML = '<div class="sp-empty">⚠ Could not load store data.</div>';
         }
       })
-      .withFailureHandler(function(){ el.innerHTML = '<div class="sp-empty">⚠ Connection error.</div>'; })
+      .withFailureHandler(function(){
+        el.innerHTML = '<div class="sp-empty">⚠ Could not load store data.</div>';
+        showToast('Connection error — tap Retry', function(){ ALL_RETAIL_STOCK=null; CS_ROWS=null; renderOtherStores(); });
+      })
       .getAllRetailStock();
     return;
   }
@@ -1171,6 +1198,7 @@ document.getElementById('btn-submit').addEventListener('click', function() {
       document.getElementById('loading-bar').style.display='none';
       document.getElementById('btn-submit').disabled=false;
       errEl.textContent='❌ Connection error. Please try again.'; errEl.style.display='block';
+      showToast('Connection error — tap Retry', function(){ document.getElementById('btn-submit').click(); });
     })
     .submitOrder({customerName:shop,customerEmail:'',customerPhone:'',notes:'',items:items});
 });
