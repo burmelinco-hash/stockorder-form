@@ -599,7 +599,6 @@ function notifyOwner(orderData, orderId, dateStr) {
 
 // ─── TRANSFER STOCK BETWEEN STORES ───────────────────────────
 function transferStock(fromStore, toStore, password, rowId, qty) {
-  if (password !== EMPLOYEE_PASS) return { success: false, error: 'Manager password required.' };
   if (!fromStore || !toStore) return { success: false, error: 'Select both stores.' };
   if (fromStore === toStore) return { success: false, error: 'Source and destination must differ.' };
   var sellQ = parseInt(qty) || 0;
