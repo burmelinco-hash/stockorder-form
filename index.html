@@ -404,6 +404,7 @@ function showApp() {
   document.getElementById('cust-shop').innerHTML = '<option value="' + SESSION_STORE.name + '">' + SESSION_STORE.name + '</option>';
   document.getElementById('screen-login').style.display = 'none';
   document.getElementById('screen-app').classList.add('active');
+  try { google.script.run.withSuccessHandler(function(name){ if(name){ document.title='Bicasso Staff — '+name; } }).getBusinessName(); } catch(e){}
   showPanel('mystore');
   loadStoreStock();
 }
@@ -427,6 +428,7 @@ function showPanel(name) {
     document.getElementById('nav-' + p).classList.toggle('active', p === name);
   });
   if (name === 'stores') renderOtherStores();
+  if (name === 'order') loadInventory();
 }
 
 // ── STOCK LOADING ─────────────────────────────────────────────────
@@ -710,34 +712,33 @@ function showCsResult(pid) {
   resEl.innerHTML = html;
 }
 
-// ── ORDER FORM (Inventory load) ───────────────────────────────────
-selProd.innerHTML = '<option value="">⏳ Loading products…</option>';
-selProd.disabled = true;
+// ── ORDER FORM (Inventory load — deferred until Order panel opens) ─
+var INVENTORY_LOADED = false;
 
-try {
-  google.script.run.withSuccessHandler(function(name) {
-    if (name) document.title = 'Bicasso Staff — ' + name;
-  }).getBusinessName();
-} catch(e) {}
-
-try {
-  google.script.run
-    .withSuccessHandler(function(result) {
-      if (result && result.success) {
-        INVENTORY = result.inventory;
-        GROUPS    = result.groups;
-        buildProductDropdown();
-      } else {
+function loadInventory() {
+  if (INVENTORY_LOADED) return;
+  selProd.innerHTML = '<option value="">⏳ Loading products…</option>';
+  selProd.disabled = true;
+  try {
+    google.script.run
+      .withSuccessHandler(function(result) {
+        INVENTORY_LOADED = true;
+        if (result && result.success) {
+          INVENTORY = result.inventory;
+          GROUPS    = result.groups;
+          buildProductDropdown();
+        } else {
+          selProd.innerHTML = '<option value="">⚠ Could not load products</option>';
+        }
+      })
+      .withFailureHandler(function() {
         selProd.innerHTML = '<option value="">⚠ Could not load products</option>';
-      }
-    })
-    .withFailureHandler(function() {
-      selProd.innerHTML = '<option value="">⚠ Could not load products</option>';
-    })
-    .getInventory();
-} catch(e) {
-  selProd.innerHTML = '<option value="">— Choose a product —</option>';
-  selProd.disabled = false;
+      })
+      .getInventory();
+  } catch(e) {
+    selProd.innerHTML = '<option value="">— Choose a product —</option>';
+    selProd.disabled = false;
+  }
 }
 
 // ── MODE TOGGLE ───────────────────────────────────────────────────
