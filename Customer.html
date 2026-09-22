@@ -53,6 +53,61 @@ tbody tr:last-child td{border-bottom:none}
 .spinner{display:inline-block;width:16px;height:16px;border:2px solid #c7d2fe;border-top-color:#4f46e5;border-radius:50%;animation:spin .7s linear infinite;margin-right:8px;vertical-align:middle}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:480px){.row2{grid-template-columns:1fr}}
+/* ── STORE STAFF LOGIN ── */
+.store-login-link{text-align:center;margin-top:6px}
+.store-login-link button{background:none;border:none;color:#4f46e5;font-size:.78rem;cursor:pointer;opacity:.7}
+.store-login-link button:hover{opacity:1;text-decoration:underline}
+#store-login-panel{display:none;background:#fff;border-radius:14px;padding:28px 24px;box-shadow:0 2px 12px rgba(0,0,0,.08);margin-bottom:20px;text-align:center}
+#store-login-panel h2{font-size:1.05rem;color:#1a1a2e;margin-bottom:6px}
+#store-login-panel p{font-size:.84rem;color:#888;margin-bottom:18px}
+.sli-select{width:100%;padding:10px 12px;border:2px solid #e2e8f0;border-radius:8px;font-size:.97rem;margin-bottom:10px;font-family:inherit}
+.sli-select:focus{outline:none;border-color:#4f46e5}
+.sli-pass{width:100%;padding:10px 12px;border:2px solid #e2e8f0;border-radius:8px;font-size:.97rem;text-align:center;letter-spacing:.1em;margin-bottom:10px;font-family:inherit}
+.sli-pass:focus{outline:none;border-color:#4f46e5}
+.btn-sli{width:100%;padding:12px;background:#4f46e5;color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:600;cursor:pointer;margin-bottom:8px}
+.btn-sli:hover{background:#4338ca}
+.btn-sli-cancel{background:none;border:none;color:#888;font-size:.83rem;cursor:pointer}
+.sli-err{color:#b91c1c;font-size:.83rem;margin-top:6px;display:none}
+#store-panel{display:none;margin-bottom:20px}
+.sp-nav{background:#1a1a2e;padding:13px 18px;display:flex;align-items:center;justify-content:space-between;border-radius:12px 12px 0 0}
+.sp-title{color:#fff;font-size:.97rem;font-weight:700}
+.btn-sp-exit{background:none;border:1px solid rgba(255,255,255,.35);color:#fff;padding:5px 13px;border-radius:7px;font-size:.8rem;cursor:pointer}
+.sp-tabs{display:flex;background:#f0f2f5;padding:8px 8px 0;gap:4px}
+.sp-tab{padding:9px 18px;background:none;border:none;border-radius:8px 8px 0 0;font-size:.87rem;font-weight:600;cursor:pointer;color:#888;transition:.15s}
+.sp-tab.active{background:#fff;color:#4f46e5;box-shadow:0 -1px 6px rgba(0,0,0,.06)}
+.sp-body{background:#fff;border-radius:0 0 12px 12px;padding:18px;box-shadow:0 2px 12px rgba(0,0,0,.08)}
+.rs-search{width:100%;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:.95rem;font-family:inherit;margin-bottom:14px}
+.rs-search:focus{outline:none;border-color:#4f46e5}
+.rs-prod-card{border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:12px}
+.rs-prod-head{padding:10px 14px;background:#1a1a2e;color:#fff;font-weight:700;font-size:.92rem}
+.rs-color-row{border-top:1px solid #e2e8f0}
+.rs-color-label{padding:7px 14px;background:#f8fafc;font-size:.82rem;font-weight:600;color:#555}
+.rs-size-row{display:flex;flex-wrap:wrap;gap:8px;padding:10px 14px}
+.rs-size-cell{text-align:center;min-width:54px}
+.rs-size-lbl{font-size:.7rem;color:#888;margin-bottom:3px}
+.rs-badge{padding:3px 8px;border-radius:8px;font-size:.8rem;font-weight:700;display:inline-block}
+.rs-ok{background:#dcfce7;color:#15803d}.rs-low{background:#fef9c3;color:#92400e}.rs-out{background:#fee2e2;color:#b91c1c}
+.rs-edit-wrap{display:inline-flex;align-items:center;gap:3px;margin-top:2px}
+.rs-edit-inp{width:46px;padding:3px 4px;border:2px solid #4f46e5;border-radius:5px;font-size:.82rem;text-align:center;font-family:inherit;-moz-appearance:textfield}
+.rs-edit-inp::-webkit-outer-spin-button,.rs-edit-inp::-webkit-inner-spin-button{-webkit-appearance:none}
+.rs-ok-btn{background:#16a34a;border:none;color:#fff;padding:3px 6px;border-radius:4px;font-size:.78rem;cursor:pointer;font-weight:700}
+.rs-cx-btn{background:none;border:1px solid #cbd5e1;color:#64748b;padding:3px 5px;border-radius:4px;font-size:.78rem;cursor:pointer}
+.btn-rs-edit{background:none;border:none;color:#4f46e5;cursor:pointer;font-size:.75rem;padding:1px 3px;opacity:.6}
+.btn-rs-edit:hover{opacity:1}
+.cs-search-wrap{position:relative;margin-bottom:14px}
+.cs-search{width:100%;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:.95rem;font-family:inherit}
+.cs-search:focus{outline:none;border-color:#4f46e5}
+.cs-suggest{display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:2px solid #4f46e5;border-top:none;border-radius:0 0 10px 10px;max-height:200px;overflow-y:auto;z-index:99;box-shadow:0 6px 16px rgba(0,0,0,.12)}
+.cs-result{margin-top:4px}
+.cs-color-block{margin-bottom:12px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
+.cs-color-hd{padding:9px 14px;background:#f8fafc;font-weight:700;font-size:.87rem;color:#1a1a2e;border-bottom:1px solid #e2e8f0}
+.cs-store-row{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid #f0f2f5;font-size:.85rem}
+.cs-store-row:last-child{border-bottom:none}
+.cs-store-name{min-width:100px;font-weight:600;color:#555}
+.cs-sizes{display:flex;flex-wrap:wrap;gap:4px}
+.cs-pill{padding:2px 7px;border-radius:8px;font-size:.75rem;font-weight:600}
+.cs-pill-in{background:#dcfce7;color:#15803d}.cs-pill-out{background:#f0f2f5;color:#bbb}
+.sp-empty{text-align:center;color:#bbb;padding:30px 0;font-size:.9rem}
 /* ── MODE TOGGLE ── */
 .mode-toggle{display:flex;gap:8px}
 .mode-btn{padding:7px 18px;border-radius:8px;border:2px solid #4f46e5;background:#fff;color:#4f46e5;font-size:.85rem;font-weight:700;cursor:pointer;transition:.15s}
@@ -97,7 +152,37 @@ tbody tr:last-child td{border-bottom:none}
   <header>
     <h1 id="biz-name">Order Form</h1>
     <p>Fill in your details and select the items you want to order</p>
+    <p class="store-login-link"><button onclick="showStoreLogin()">🏪 Store Staff Login</button></p>
   </header>
+
+  <!-- ── STORE LOGIN PANEL ── -->
+  <div id="store-login-panel">
+    <h2>🏪 Store Staff Login</h2>
+    <p>Select your store and enter your passcode to manage stock</p>
+    <select id="sli-store" class="sli-select">
+      <option value="">— Choose your store —</option>
+      <option value="Bicasso 1">Bicasso 1</option>
+      <option value="Bicasso 2">Bicasso 2</option>
+      <option value="Bicasso Nana">Bicasso Nana</option>
+    </select>
+    <input type="password" id="sli-pass" class="sli-pass" placeholder="Store passcode" onkeydown="if(event.key==='Enter')doStoreLogin()">
+    <button id="btn-sli" class="btn-sli" onclick="doStoreLogin()">Enter Store Mode</button>
+    <br><button class="btn-sli-cancel" onclick="hideStoreLogin()">← Back to Order Form</button>
+    <div id="sli-err" class="sli-err"></div>
+  </div>
+
+  <!-- ── STORE MANAGEMENT PANEL ── -->
+  <div id="store-panel">
+    <div class="sp-nav">
+      <span class="sp-title" id="sp-title">🏪 Store</span>
+      <button class="btn-sp-exit" onclick="exitStorePanel()">← Back to Order Form</button>
+    </div>
+    <div class="sp-tabs">
+      <button class="sp-tab active" id="sp-tab-mystock" onclick="switchStoreTab('mystock')">📦 My Stock</button>
+      <button class="sp-tab" id="sp-tab-other" onclick="switchStoreTab('other')">🏬 Check Other Stores</button>
+    </div>
+    <div class="sp-body" id="sp-body"></div>
+  </div>
 
   <!-- ── MAIN FORM ── -->
   <div id="main-form">
@@ -775,6 +860,270 @@ function resetSize() { selSize.innerHTML='<option value="">— Choose size —</
 function hideAvail() { availBox.className='avail-box idle'; availTxt.textContent='Select product, color and size to check availability.'; }
 
 renderCart();
+
+// ─── STORE MODE ──────────────────────────────────────────────
+var SESSION_STORE    = null;
+var ALL_RETAIL_STOCK = null;
+
+function showStoreLogin() {
+  document.getElementById('main-form').style.display    = 'none';
+  document.getElementById('success-screen').style.display = 'none';
+  document.getElementById('store-panel').style.display  = 'none';
+  document.getElementById('store-login-panel').style.display = 'block';
+}
+
+function hideStoreLogin() {
+  document.getElementById('store-login-panel').style.display = 'none';
+  document.getElementById('main-form').style.display    = 'block';
+}
+
+function doStoreLogin() {
+  var storeName = document.getElementById('sli-store').value;
+  var pass      = document.getElementById('sli-pass').value;
+  var errEl     = document.getElementById('sli-err');
+  errEl.style.display = 'none';
+  if (!storeName) { errEl.textContent = '⚠ Please select your store.'; errEl.style.display = 'block'; return; }
+  if (!pass)      { errEl.textContent = '⚠ Please enter your passcode.'; errEl.style.display = 'block'; return; }
+
+  var btn = document.getElementById('btn-sli');
+  btn.textContent = 'Verifying…'; btn.disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      btn.textContent = 'Enter Store Mode'; btn.disabled = false;
+      if (result.success) {
+        SESSION_STORE = { name: storeName, pass: pass };
+        document.getElementById('store-login-panel').style.display = 'none';
+        openStorePanel();
+      } else {
+        errEl.textContent = '❌ Wrong passcode. Please try again.';
+        errEl.style.display = 'block';
+      }
+    })
+    .withFailureHandler(function() {
+      btn.textContent = 'Enter Store Mode'; btn.disabled = false;
+      errEl.textContent = '❌ Connection error. Please try again.';
+      errEl.style.display = 'block';
+    })
+    .verifyRetailStore(storeName, pass);
+}
+
+function openStorePanel() {
+  document.getElementById('sp-title').textContent = '🏪 ' + SESSION_STORE.name;
+  document.getElementById('store-panel').style.display  = 'block';
+  document.getElementById('main-form').style.display    = 'none';
+  document.getElementById('success-screen').style.display = 'none';
+
+  if (!ALL_RETAIL_STOCK) {
+    document.getElementById('sp-body').innerHTML = '<div style="text-align:center;padding:40px;color:#888"><div class="spinner"></div><br><br>Loading stock…</div>';
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          ALL_RETAIL_STOCK = result.stores;
+          switchStoreTab('mystock');
+        } else {
+          document.getElementById('sp-body').innerHTML = '<div class="sp-empty">⚠ Could not load stock. Please try again.</div>';
+        }
+      })
+      .withFailureHandler(function() {
+        document.getElementById('sp-body').innerHTML = '<div class="sp-empty">⚠ Connection error.</div>';
+      })
+      .getAllRetailStock();
+  } else {
+    switchStoreTab('mystock');
+  }
+}
+
+function exitStorePanel() {
+  SESSION_STORE = null;
+  document.getElementById('store-panel').style.display = 'none';
+  document.getElementById('main-form').style.display   = 'block';
+  document.getElementById('sli-pass').value  = '';
+  document.getElementById('sli-store').value = '';
+}
+
+function switchStoreTab(tab) {
+  document.getElementById('sp-tab-mystock').classList.toggle('active', tab === 'mystock');
+  document.getElementById('sp-tab-other').classList.toggle('active', tab === 'other');
+  if (tab === 'mystock') renderMyStock();
+  else renderOtherStores();
+}
+
+function rsq(v) { return String(v||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+function myStockBadge(qty) { return qty === 0 ? 'rs-out' : qty <= 3 ? 'rs-low' : 'rs-ok'; }
+
+function renderMyStock() {
+  var inv  = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name];
+  var pids = inv ? Object.keys(inv) : [];
+  var html = '<input type="text" class="rs-search" id="ms-search" placeholder="🔍 Search product ID…" oninput="filterMyStock(this.value)">';
+  html += '<div id="ms-list">' + buildMyStockList(pids, inv) + '</div>';
+  document.getElementById('sp-body').innerHTML = html;
+}
+
+function buildMyStockList(pids, inv) {
+  if (!pids || !pids.length) return '<div class="sp-empty">No stock data found.</div>';
+  return pids.map(function(pid) {
+    var colors = Object.keys(inv[pid]);
+    var colorHtml = colors.map(function(color) {
+      var cn   = color.replace(/^Color\s*/i, '');
+      var sizes = inv[pid][color];
+      var sizeHtml = Object.keys(sizes).map(function(size) {
+        var qty   = parseInt(sizes[size]) || 0;
+        var cls   = myStockBadge(qty);
+        var cellId = 'rsc-' + rsq(pid).replace(/[^a-zA-Z0-9]/g,'_') + '-' + cn.replace(/[^a-zA-Z0-9]/g,'_') + '-' + size.replace(/[^a-zA-Z0-9]/g,'_');
+        return '<div class="rs-size-cell">'
+          + '<div class="rs-size-lbl">' + size + '</div>'
+          + '<div id="' + cellId + '">'
+          + '<span class="rs-badge ' + cls + '">' + qty + '</span>'
+          + ' <button class="btn-rs-edit" onclick="editRsQty(\'' + rsq(pid) + '\',\'' + rsq(cn) + '\',\'' + rsq(size) + '\',\'' + cellId + '\')">✎</button>'
+          + '</div></div>';
+      }).join('');
+      return '<div class="rs-color-row"><div class="rs-color-label">' + color + '</div><div class="rs-size-row">' + sizeHtml + '</div></div>';
+    }).join('');
+    return '<div class="rs-prod-card"><div class="rs-prod-head">' + pid + '</div>' + colorHtml + '</div>';
+  }).join('');
+}
+
+function filterMyStock(q) {
+  q = q.trim().toLowerCase();
+  var inv  = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name];
+  var pids = inv ? Object.keys(inv).filter(function(p){ return !q || p.toLowerCase().indexOf(q) !== -1; }) : [];
+  document.getElementById('ms-list').innerHTML = buildMyStockList(pids, inv);
+}
+
+function editRsQty(pid, cn, size, cellId) {
+  var cell = document.getElementById(cellId);
+  if (!cell) return;
+  var badge   = cell.querySelector('.rs-badge');
+  var current = badge ? parseInt(badge.textContent) || 0 : 0;
+  cell.innerHTML = '<span class="rs-edit-wrap">'
+    + '<input class="rs-edit-inp" id="' + cellId + '-i" type="number" min="0" value="' + current + '"'
+    + ' data-pid="' + pid.replace(/"/g,'&quot;') + '" data-cn="' + cn.replace(/"/g,'&quot;') + '" data-sz="' + size.replace(/"/g,'&quot;') + '">'
+    + '<button class="rs-ok-btn" onclick="saveRsQty(\'' + cellId + '\')">✓</button>'
+    + '<button class="rs-cx-btn" onclick="cancelRsQty(\'' + cellId + '\',' + current + ',\'' + rsq(pid) + '\',\'' + rsq(cn) + '\',\'' + rsq(size) + '\')">✕</button>'
+    + '</span>';
+  var inp = document.getElementById(cellId + '-i');
+  if (inp) { inp.focus(); inp.select(); }
+}
+
+function saveRsQty(cellId) {
+  var inp = document.getElementById(cellId + '-i');
+  if (!inp) return;
+  var pid = inp.getAttribute('data-pid');
+  var cn  = inp.getAttribute('data-cn');
+  var sz  = inp.getAttribute('data-sz');
+  var qty = parseInt(inp.value);
+  if (isNaN(qty) || qty < 0) { inp.focus(); return; }
+  var cell = document.getElementById(cellId);
+  if (cell) cell.innerHTML = '<span style="color:#aaa;font-size:.78rem">Saving…</span>';
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        var colorKey = 'Color ' + cn;
+        if (ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name] &&
+            ALL_RETAIL_STOCK[SESSION_STORE.name][pid] &&
+            ALL_RETAIL_STOCK[SESSION_STORE.name][pid][colorKey]) {
+          ALL_RETAIL_STOCK[SESSION_STORE.name][pid][colorKey][sz] = qty;
+        }
+        var cls = myStockBadge(qty);
+        var c = document.getElementById(cellId);
+        if (c) c.innerHTML = '<span class="rs-badge ' + cls + '">' + qty + '</span>'
+          + ' <button class="btn-rs-edit" onclick="editRsQty(\'' + rsq(pid) + '\',\'' + rsq(cn) + '\',\'' + rsq(sz) + '\',\'' + cellId + '\')">✎</button>';
+      } else {
+        var c2 = document.getElementById(cellId);
+        if (c2) c2.innerHTML = '<span style="color:#b91c1c;font-size:.78rem">⚠ Error</span>'
+          + ' <button class="btn-rs-edit" onclick="editRsQty(\'' + rsq(pid) + '\',\'' + rsq(cn) + '\',\'' + rsq(sz) + '\',\'' + cellId + '\')">Retry</button>';
+      }
+    })
+    .withFailureHandler(function() {
+      var c3 = document.getElementById(cellId);
+      if (c3) c3.innerHTML = '<span style="color:#b91c1c;font-size:.78rem">⚠ Failed</span>'
+        + ' <button class="btn-rs-edit" onclick="editRsQty(\'' + rsq(pid) + '\',\'' + rsq(cn) + '\',\'' + rsq(sz) + '\',\'' + cellId + '\')">Retry</button>';
+    })
+    .updateRetailStockQty(SESSION_STORE.name, SESSION_STORE.pass, pid, cn, sz, qty);
+}
+
+function cancelRsQty(cellId, orig, pid, cn, sz) {
+  var cls = myStockBadge(orig);
+  var c = document.getElementById(cellId);
+  if (c) c.innerHTML = '<span class="rs-badge ' + cls + '">' + orig + '</span>'
+    + ' <button class="btn-rs-edit" onclick="editRsQty(\'' + rsq(pid) + '\',\'' + rsq(cn) + '\',\'' + rsq(sz) + '\',\'' + cellId + '\')">✎</button>';
+}
+
+function renderOtherStores() {
+  var html = '<div class="cs-search-wrap">'
+    + '<input type="text" id="cs-inp" class="cs-search" placeholder="🔍 Search product ID…" oninput="csSearch(this.value)" autocomplete="off">'
+    + '<div id="cs-suggest" class="cs-suggest"></div>'
+    + '</div>'
+    + '<div id="cs-result" class="cs-result"><div class="sp-empty">Search for a product above to see availability across all stores.</div></div>';
+  document.getElementById('sp-body').innerHTML = html;
+}
+
+function csSearch(q) {
+  q = q.trim().toLowerCase();
+  var sug = document.getElementById('cs-suggest');
+  if (!sug) return;
+  sug.innerHTML = '';
+  if (!q || !ALL_RETAIL_STOCK) { sug.style.display = 'none'; return; }
+  var pidSet = {};
+  ['Bicasso 1','Bicasso 2','Bicasso Nana'].forEach(function(s) {
+    if (ALL_RETAIL_STOCK[s]) Object.keys(ALL_RETAIL_STOCK[s]).forEach(function(p){ pidSet[p]=1; });
+  });
+  var matches = Object.keys(pidSet).filter(function(p){ return p.toLowerCase().indexOf(q) !== -1; });
+  if (!matches.length) { sug.innerHTML = '<div style="padding:10px 14px;color:#aaa;font-size:.88rem">No products found</div>'; sug.style.display = 'block'; return; }
+  matches.forEach(function(pid) {
+    var d = document.createElement('div');
+    d.textContent = pid;
+    d.style.cssText = 'padding:10px 14px;cursor:pointer;font-size:.93rem;border-bottom:1px solid #f0f2f5;color:#1a1a2e';
+    d.addEventListener('mousedown', function(e){ e.preventDefault(); showCsResult(pid); document.getElementById('cs-inp').value=pid; sug.style.display='none'; });
+    d.addEventListener('mouseover',  function(){ this.style.background='#f0f2f5'; });
+    d.addEventListener('mouseout',   function(){ this.style.background='#fff'; });
+    sug.appendChild(d);
+  });
+  sug.style.display = 'block';
+}
+
+document.addEventListener('click', function(e){
+  var sug = document.getElementById('cs-suggest');
+  if (sug && !sug.contains(e.target) && e.target.id !== 'cs-inp') sug.style.display = 'none';
+});
+
+function showCsResult(pid) {
+  var storeNames = ['Bicasso 1','Bicasso 2','Bicasso Nana'];
+  var colorSet = {}, colorOrder = [];
+  storeNames.forEach(function(s) {
+    var inv = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[s];
+    if (!inv || !inv[pid]) return;
+    Object.keys(inv[pid]).forEach(function(color) {
+      if (!colorSet[color]) { colorSet[color]=1; colorOrder.push(color); }
+    });
+  });
+  if (!colorOrder.length) {
+    document.getElementById('cs-result').innerHTML = '<div class="sp-empty">No stock data found for <strong>' + pid + '</strong>.</div>';
+    return;
+  }
+  var html = '<div style="font-size:.82rem;color:#888;margin-bottom:10px">Product: <strong style="color:#1a1a2e">' + pid + '</strong></div>';
+  colorOrder.forEach(function(color) {
+    var sizeSet = {};
+    storeNames.forEach(function(s) {
+      var inv = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[s];
+      if (!inv || !inv[pid] || !inv[pid][color]) return;
+      Object.keys(inv[pid][color]).forEach(function(sz){ sizeSet[sz]=1; });
+    });
+    var sizes = Object.keys(sizeSet).sort(function(a,b){ var na=parseFloat(a),nb=parseFloat(b); return (!isNaN(na)&&!isNaN(nb))?na-nb:(a<b?-1:1); });
+    var storeRows = storeNames.map(function(s) {
+      var inv = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[s];
+      var pills = sizes.map(function(sz) {
+        var qty = (inv && inv[pid] && inv[pid][color]) ? (parseInt(inv[pid][color][sz]) || 0) : 0;
+        return '<span class="cs-pill ' + (qty>0?'cs-pill-in':'cs-pill-out') + '">' + sz + (qty>0?'('+qty+')':'✕') + '</span>';
+      }).join('');
+      var isSelf = SESSION_STORE && SESSION_STORE.name === s;
+      return '<div class="cs-store-row"><span class="cs-store-name">' + (isSelf?'★ ':'') + s + '</span><div class="cs-sizes">' + pills + '</div></div>';
+    }).join('');
+    html += '<div class="cs-color-block"><div class="cs-color-hd">' + color + '</div>' + storeRows + '</div>';
+  });
+  document.getElementById('cs-result').innerHTML = html;
+}
 </script>
 </body>
 </html>

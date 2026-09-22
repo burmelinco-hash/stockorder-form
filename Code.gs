@@ -9,6 +9,11 @@ var BUSINESS_NAME        = 'Burmelin';          // Your business name
 var EMPLOYEE_PASS        = 'employee2024';         // Password for employee dashboard
 var ORDERS_TAB_NAME      = 'Orders';               // Name for the new orders tab
 var INVENTORY_SHEET_NAME = 'Updated Size Chart';   // Your inventory tab name
+var RETAIL_PASSWORDS = {
+  'Bicasso 1':    'b1store',
+  'Bicasso 2':    'b2store',
+  'Bicasso Nana': 'bNana'
+};
 // ────────────────────────────────────────────────────────────
 
 // ─── WEB APP ENTRY POINT ─────────────────────────────────────
@@ -59,8 +64,12 @@ function handleApi(action, params, body) {
     case 'sendInvoice':     out = sendInvoice(body.orderId, body.password); break;
     case 'deleteOrder':     out = deleteOrder(body.orderId, body.password); break;
     case 'editOrderItems':  out = editOrderItems(body.orderId, body.newItems, body.password); break;
-    case 'markDone':        out = markDone(body.orderId, body.password); break;
-    default:                out = { success: false, error: 'Unknown action: ' + action };
+    case 'markDone':             out = markDone(body.orderId, body.password); break;
+    case 'updateStockQty':       out = updateStockQty(body.productId, body.colorNum, body.size, body.newQty, body.password); break;
+    case 'getAllRetailStock':     out = getAllRetailStock(); break;
+    case 'verifyRetailStore':    out = verifyRetailStore(body.storeName, body.password); break;
+    case 'updateRetailStockQty': out = updateRetailStockQty(body.storeName, body.password, body.productId, body.colorNum, body.size, body.newQty); break;
+    default:                     out = { success: false, error: 'Unknown action: ' + action };
   }
   return jsonOut(out);
 }
@@ -583,6 +592,124 @@ function notifyOwner(orderData, orderId, dateStr) {
     + 'Open your Employee Dashboard to manage this order.',
     { name: BUSINESS_NAME + ' – Order System' }
   );
+}
+
+// ─── VERIFY RETAIL STORE LOGIN ────────────────────────────────
+function verifyRetailStore(storeName, password) {
+  if (!RETAIL_PASSWORDS[storeName]) return { success: false, error: 'Unknown store.' };
+  if (password !== RETAIL_PASSWORDS[storeName]) return { success: false, error: 'Wrong password.' };
+  return { success: true };
+}
+
+// ─── GET ALL RETAIL STOCK (public read, no password needed) ───
+function getAllRetailStock() {
+  return getRetailStock(null);
+}
+
+// ─── GET RETAIL STOCK (one store or all stores) ───────────────
+function getRetailStock(storeName) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var storeNames = storeName ? [storeName] : ['Bicasso 1', 'Bicasso 2', 'Bicasso Nana'];
+    var storesData = {};
+
+    storeNames.forEach(function(name) {
+      var sheetName = name + ' Stock';
+      var sheet = ss.getSheetByName(sheetName);
+      // Auto-create sheet from wholesale product list if missing
+      if (!sheet) sheet = createRetailSheet(ss, sheetName);
+      var inventory = {};
+
+      if (sheet && sheet.getLastRow() > 1) {
+        var data = sheet.getDataRange().getValues();
+        var startRow = 1;
+        for (var h = 0; h < data.length; h++) {
+          if (String(data[h][1]).trim().toLowerCase() === 'product id') { startRow = h + 1; break; }
+        }
+        for (var r = startRow; r < data.length; r++) {
+          var row      = data[r];
+          var pid      = String(row[1]).trim();
+          var color    = String(row[3]).trim();
+          var size     = String(row[4]).trim();
+          var stock    = parseInt(row[5]) || 0;
+          if (!pid || !color || !size) continue;
+          var colorKey = 'Color ' + color;
+          if (!inventory[pid]) inventory[pid] = {};
+          if (!inventory[pid][colorKey]) inventory[pid][colorKey] = {};
+          inventory[pid][colorKey][size] = stock;
+        }
+      }
+      storesData[name] = inventory;
+    });
+
+    return { success: true, stores: storesData };
+  } catch(err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+// ─── CREATE RETAIL STORE SHEET (seeded from wholesale, qty=0) ─
+function createRetailSheet(ss, sheetName) {
+  try {
+    var wholesale = null;
+    var sheets = ss.getSheets();
+    for (var i = 0; i < sheets.length; i++) {
+      if (sheets[i].getName().trim() === INVENTORY_SHEET_NAME.trim()) { wholesale = sheets[i]; break; }
+    }
+    var newSheet = ss.insertSheet(sheetName);
+    if (wholesale) {
+      var src  = wholesale.getDataRange().getValues();
+      var dest = src.map(function(row) { return row.slice(0, 6); });
+      // Zero out stock column (F) for all data rows
+      var startRow = 1;
+      for (var h = 0; h < dest.length; h++) {
+        if (String(dest[h][1]).trim().toLowerCase() === 'product id') { startRow = h + 1; break; }
+      }
+      for (var r = startRow; r < dest.length; r++) { dest[r][5] = 0; }
+      newSheet.getRange(1, 1, dest.length, 6).setValues(dest);
+      newSheet.getRange(startRow, 1, 1, 6).setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+      newSheet.setFrozenRows(startRow);
+    } else {
+      var headers = [['ID','Product ID','Category','Color','Size','Stock']];
+      newSheet.getRange(1, 1, 1, 6).setValues(headers);
+      newSheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+      newSheet.setFrozenRows(1);
+    }
+    return newSheet;
+  } catch(e) {
+    return null;
+  }
+}
+
+// ─── UPDATE RETAIL STOCK QTY ──────────────────────────────────
+// Accepts store-specific passcode OR master employee password
+function updateRetailStockQty(storeName, password, productId, colorNum, size, newQty) {
+  var validPass = (RETAIL_PASSWORDS[storeName] && password === RETAIL_PASSWORDS[storeName])
+               || password === EMPLOYEE_PASS;
+  if (!validPass) return { success: false, error: 'Wrong password.' };
+  try {
+    var ss        = SpreadsheetApp.getActiveSpreadsheet();
+    var sheetName = storeName + ' Stock';
+    var sheet     = ss.getSheetByName(sheetName);
+    if (!sheet) return { success: false, error: 'Sheet for "' + storeName + '" not found. Please contact admin.' };
+
+    var data     = sheet.getDataRange().getValues();
+    var startRow = 1;
+    for (var h = 0; h < data.length; h++) {
+      if (String(data[h][1]).trim().toLowerCase() === 'product id') { startRow = h + 1; break; }
+    }
+    for (var r = startRow; r < data.length; r++) {
+      if (String(data[r][1]).trim() === String(productId).trim() &&
+          String(data[r][3]).trim() === String(colorNum).trim()  &&
+          String(data[r][4]).trim() === String(size).trim()) {
+        sheet.getRange(r + 1, 6).setValue(parseInt(newQty) || 0);
+        return { success: true };
+      }
+    }
+    return { success: false, error: 'Item not found in ' + storeName + ' stock.' };
+  } catch(err) {
+    return { success: false, error: err.toString() };
+  }
 }
 
 // ─── INTERNAL: BUILD INVOICE HTML ─────────────────────────────

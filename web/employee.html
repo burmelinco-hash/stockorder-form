@@ -173,6 +173,10 @@ tbody tr:last-child td{border-bottom:none}
         style="flex:1;padding:12px;background:#fff;color:#7c3aed;border:2px solid #7c3aed;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer">
         📦 Stock
       </button>
+      <button id="mode-retail" onclick="switchToRetail()"
+        style="flex:1;padding:12px;background:#fff;color:#7c3aed;border:2px solid #7c3aed;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer">
+        🏪 Retail
+      </button>
     </div>
 
     <!-- ── ORDER FILTER TABS ── -->
@@ -188,6 +192,7 @@ tbody tr:last-child td{border-bottom:none}
     </div>
 
     <div id="stock-view" style="display:none"></div>
+    <div id="retail-view" style="display:none"></div>
   </div>
 </div>
 
@@ -207,14 +212,16 @@ tbody tr:last-child td{border-bottom:none}
 // ════════════════════════════════════════════════════════════════
 var API_URL = 'https://script.google.com/macros/s/AKfycbyiayJs05UBqg65jl3HhyF8rqcIiuZvF6A7BKDsBcKILnw48Qz8-o-LxdqcVwgpDZRp/exec';
 (function(){
-  var GET_ACTIONS = { getBusinessName:1, getInventory:1 };
+  var GET_ACTIONS = { getBusinessName:1, getInventory:1, getAllRetailStock:1 };
   var POST_ARGS = {
-    getOrders:      ['password'],
-    submitOrder:    ['order'],
-    sendInvoice:    ['orderId','password'],
-    deleteOrder:    ['orderId','password'],
-    editOrderItems: ['orderId','newItems','password'],
-    markDone:       ['orderId','password']
+    getOrders:           ['password'],
+    submitOrder:         ['order'],
+    sendInvoice:         ['orderId','password'],
+    deleteOrder:         ['orderId','password'],
+    editOrderItems:      ['orderId','newItems','password'],
+    markDone:            ['orderId','password'],
+    updateStockQty:      ['productId','colorNum','size','newQty','password'],
+    updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty']
   };
   function makeRunner(){
     var onOk=null, onErr=null;
@@ -344,30 +351,31 @@ function updateCounts() {
 function setModeButtons(mode) {
   var ob = document.getElementById('mode-orders');
   var sb = document.getElementById('mode-stock');
-  if (!ob || !sb) return;
-  if (mode === 'stock') {
-    sb.style.background = '#7c3aed'; sb.style.color = '#fff'; sb.style.border = '2px solid #7c3aed';
-    ob.style.background = '#fff';    ob.style.color = '#7c3aed'; ob.style.border = '2px solid #7c3aed';
-  } else {
-    ob.style.background = '#7c3aed'; ob.style.color = '#fff'; ob.style.border = '2px solid #7c3aed';
-    sb.style.background = '#fff';    sb.style.color = '#7c3aed'; sb.style.border = '2px solid #7c3aed';
-  }
+  var rb = document.getElementById('mode-retail');
+  [ob, sb, rb].forEach(function(b) {
+    if (!b) return;
+    b.style.background = '#fff'; b.style.color = '#7c3aed'; b.style.border = '2px solid #7c3aed';
+  });
+  var active = mode === 'stock' ? sb : mode === 'retail' ? rb : ob;
+  if (active) { active.style.background = '#7c3aed'; active.style.color = '#fff'; active.style.border = '2px solid #7c3aed'; }
 }
 
 function switchToOrders(filter) {
   setModeButtons('orders');
-  document.getElementById('stock-view').style.display       = 'none';
-  document.getElementById('orders-container').style.display = 'block';
-  document.getElementById('tabs').style.display             = 'flex';
+  document.getElementById('stock-view').style.display        = 'none';
+  document.getElementById('retail-view').style.display       = 'none';
+  document.getElementById('orders-container').style.display  = 'block';
+  document.getElementById('tabs').style.display              = 'flex';
   filterOrders(filter);
 }
 
 function switchToStock() {
   setModeButtons('stock');
   CURRENT_FILTER = 'stock';
-  document.getElementById('tabs').style.display             = 'none';
-  document.getElementById('orders-container').style.display = 'none';
-  document.getElementById('stock-view').style.display       = 'block';
+  document.getElementById('tabs').style.display              = 'none';
+  document.getElementById('orders-container').style.display  = 'none';
+  document.getElementById('retail-view').style.display       = 'none';
+  document.getElementById('stock-view').style.display        = 'block';
   if (STOCK_DATA) {
     renderStockCategories();
   } else {
@@ -920,6 +928,133 @@ function markDone(orderId) {
       msg.className = 'action-msg err'; msg.textContent = '❌ Connection error. Please try again.';
     })
     .markDone(orderId, SESSION_PASS);
+}
+
+// ─── RETAIL STOCK ────────────────────────────────────────────
+var ALL_RETAIL_STOCK = null;
+var RETAIL_STORE_TAB = 'Bicasso 1';
+var RETAIL_STORES    = ['Bicasso 1','Bicasso 2','Bicasso Nana'];
+
+function switchToRetail() {
+  setModeButtons('retail');
+  document.getElementById('tabs').style.display             = 'none';
+  document.getElementById('orders-container').style.display = 'none';
+  document.getElementById('stock-view').style.display       = 'none';
+  document.getElementById('retail-view').style.display      = 'block';
+  if (ALL_RETAIL_STOCK) { renderRetailView(); } else { loadRetailStock(); }
+}
+
+function loadRetailStock() {
+  document.getElementById('retail-view').innerHTML =
+    '<div class="loading-state"><div class="spinner"></div><br><br>Loading retail stock…</div>';
+  google.script.run
+    .withSuccessHandler(function(r) {
+      if (r && r.success) { ALL_RETAIL_STOCK = r.stores; renderRetailView(); }
+      else { document.getElementById('retail-view').innerHTML = '<div class="empty-state">⚠️ ' + (r && r.error || 'Error') + '</div>'; }
+    })
+    .withFailureHandler(function() {
+      document.getElementById('retail-view').innerHTML = '<div class="empty-state">⚠️ Could not load retail stock.</div>';
+    })
+    .getAllRetailStock();
+}
+
+function renderRetailView() {
+  var tabs = RETAIL_STORES.map(function(s) {
+    var active = s === RETAIL_STORE_TAB;
+    return '<button onclick="selectRetailStore(\'' + esc(s) + '\')" style="flex:1;padding:9px;border-radius:8px;border:2px solid #7c3aed;font-size:.85rem;font-weight:700;cursor:pointer;background:' + (active?'#7c3aed':'#fff') + ';color:' + (active?'#fff':'#7c3aed') + '">' + s + '</button>';
+  }).join('');
+  var storeHtml = buildRetailStoreView(RETAIL_STORE_TAB);
+  document.getElementById('retail-view').innerHTML =
+    '<div style="display:flex;gap:8px;margin-bottom:16px">' + tabs + '</div>'
+    + '<input type="text" placeholder="Search products…" oninput="filterRetailStock(this.value,\'' + esc(RETAIL_STORE_TAB) + '\')" style="width:100%;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:.93rem;margin-bottom:14px">'
+    + '<div id="retail-stock-list">' + storeHtml + '</div>';
+}
+
+function selectRetailStore(storeName) {
+  RETAIL_STORE_TAB = storeName;
+  renderRetailView();
+}
+
+function buildRetailStoreView(storeName) {
+  var inv = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[storeName];
+  if (!inv) return '<div class="empty-state">No stock data for ' + storeName + '</div>';
+  var pids = Object.keys(inv);
+  if (!pids.length) return '<div class="empty-state">No products found.</div>';
+  return buildRetailProdList(pids, inv, storeName);
+}
+
+function buildRetailProdList(pids, inv, storeName) {
+  var html = '';
+  pids.forEach(function(pid) {
+    var colors = inv[pid];
+    var colorKeys = Object.keys(colors);
+    html += '<div class="order-card" style="margin-bottom:10px"><div class="order-header" style="padding:12px 16px;font-weight:700;font-size:.93rem;color:#1a1a2e">' + pid + '</div><div style="padding:0 16px 14px">';
+    colorKeys.forEach(function(cn) {
+      var sizes = colors[cn];
+      var sizeKeys = Object.keys(sizes);
+      html += '<div style="margin-bottom:8px"><div style="font-size:.82rem;color:#888;margin-bottom:4px">Color ' + cn + '</div><div style="display:flex;flex-wrap:wrap;gap:6px">';
+      sizeKeys.forEach(function(sz) {
+        var qty = parseInt(sizes[sz]) || 0;
+        var cellId = 'rrs-' + esc(storeName) + '-' + esc(pid) + '-' + esc(cn) + '-' + esc(sz);
+        var badge = qty === 0 ? 'background:#fee2e2;color:#991b1b' : qty <= 3 ? 'background:#fef9c3;color:#92400e' : 'background:#dcfce7;color:#15803d';
+        html += '<span id="' + cellId + '" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:8px;font-size:.8rem;font-weight:600;' + badge + ';cursor:pointer" onclick="editRetailStock(\'' + esc(pid) + '\',\'' + esc(cn) + '\',\'' + esc(sz) + '\',\'' + cellId + '\',\'' + esc(storeName) + '\')">' + sz + ': ' + qty + '</span>';
+      });
+      html += '</div></div>';
+    });
+    html += '</div></div>';
+  });
+  return html;
+}
+
+function filterRetailStock(q, storeName) {
+  var inv = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[storeName];
+  if (!inv) return;
+  var pids = Object.keys(inv).filter(function(p) { return p.toLowerCase().indexOf(q.toLowerCase()) !== -1; });
+  document.getElementById('retail-stock-list').innerHTML = buildRetailProdList(pids, inv, storeName);
+}
+
+function editRetailStock(pid, cn, size, cellId, storeName) {
+  var inv = ALL_RETAIL_STOCK[storeName];
+  var cur = (inv && inv[pid] && inv[pid][cn] && inv[pid][cn][size]) || 0;
+  var cell = document.getElementById(cellId);
+  if (!cell) return;
+  cell.innerHTML = size + ': <input id="inp-' + cellId + '" type="number" min="0" value="' + parseInt(cur) + '" style="width:52px;border:1px solid #7c3aed;border-radius:5px;padding:2px 4px;font-size:.8rem" onclick="event.stopPropagation()">'
+    + ' <button onclick="saveRetailStock(\'' + esc(cellId) + '\',\'' + esc(pid) + '\',\'' + esc(cn) + '\',\'' + esc(size) + '\',\'' + esc(storeName) + '\')" style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:2px 7px;cursor:pointer;font-size:.78rem">Save</button>'
+    + ' <button onclick="cancelRetailStock(\'' + esc(cellId) + '\',\'' + esc(pid) + '\',\'' + esc(cn) + '\',\'' + esc(size) + '\',\'' + esc(storeName) + '\')" style="background:#e5e7eb;color:#333;border:none;border-radius:5px;padding:2px 7px;cursor:pointer;font-size:.78rem">✕</button>';
+  cell.style.background = '#ede9fe'; cell.style.color = '#1a1a2e';
+}
+
+function saveRetailStock(cellId, pid, cn, size, storeName) {
+  var inp = document.getElementById('inp-' + cellId);
+  if (!inp) return;
+  var newQty = parseInt(inp.value);
+  if (isNaN(newQty) || newQty < 0) return;
+  var cell = document.getElementById(cellId);
+  if (cell) { cell.innerHTML = size + ': saving…'; }
+  google.script.run
+    .withSuccessHandler(function(r) {
+      if (r && r.success) {
+        if (!ALL_RETAIL_STOCK[storeName][pid]) ALL_RETAIL_STOCK[storeName][pid] = {};
+        if (!ALL_RETAIL_STOCK[storeName][pid][cn]) ALL_RETAIL_STOCK[storeName][pid][cn] = {};
+        ALL_RETAIL_STOCK[storeName][pid][cn][size] = newQty;
+        var badge = newQty === 0 ? 'background:#fee2e2;color:#991b1b' : newQty <= 3 ? 'background:#fef9c3;color:#92400e' : 'background:#dcfce7;color:#15803d';
+        var c2 = document.getElementById(cellId);
+        if (c2) { c2.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:8px;font-size:.8rem;font-weight:600;' + badge + ';cursor:pointer'; c2.innerHTML = size + ': ' + newQty; c2.onclick = function() { editRetailStock(pid,cn,size,cellId,storeName); }; }
+      } else {
+        alert('Error: ' + (r && r.error || 'Unknown error'));
+        cancelRetailStock(cellId, pid, cn, size, storeName);
+      }
+    })
+    .withFailureHandler(function() { alert('Save failed.'); cancelRetailStock(cellId, pid, cn, size, storeName); })
+    .updateRetailStockQty(storeName, SESSION_PASS, pid, cn, size, newQty);
+}
+
+function cancelRetailStock(cellId, pid, cn, size, storeName) {
+  var qty = (ALL_RETAIL_STOCK[storeName] && ALL_RETAIL_STOCK[storeName][pid] && ALL_RETAIL_STOCK[storeName][pid][cn] && ALL_RETAIL_STOCK[storeName][pid][cn][size]) || 0;
+  qty = parseInt(qty) || 0;
+  var badge = qty === 0 ? 'background:#fee2e2;color:#991b1b' : qty <= 3 ? 'background:#fef9c3;color:#92400e' : 'background:#dcfce7;color:#15803d';
+  var cell = document.getElementById(cellId);
+  if (cell) { cell.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:8px;font-size:.8rem;font-weight:600;' + badge + ';cursor:pointer'; cell.innerHTML = size + ': ' + qty; cell.onclick = function() { editRetailStock(pid,cn,size,cellId,storeName); }; }
 }
 </script>
 </body>
