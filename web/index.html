@@ -102,20 +102,17 @@ tbody tr:last-child td{border-bottom:none}
   <!-- ── MAIN FORM ── -->
   <div id="main-form">
 
-    <!-- Customer Info -->
+    <!-- Shop Selection -->
     <div class="card">
-      <h2>Your Information</h2>
+      <h2>Select Shop</h2>
       <div class="form-group">
-        <label for="cust-name">Full Name *</label>
-        <input type="text" id="cust-name" placeholder="John Smith" required>
-      </div>
-      <div class="form-group">
-        <label for="cust-phone">Phone (optional)</label>
-        <input type="tel" id="cust-phone" placeholder="+66 xx xxx xxxx">
-      </div>
-      <div class="form-group">
-        <label for="cust-notes">Notes / Special requests</label>
-        <textarea id="cust-notes" placeholder="Any special instructions..."></textarea>
+        <label for="cust-shop">Shop Name *</label>
+        <select id="cust-shop">
+          <option value="">— Choose a shop —</option>
+          <option value="Bicasso 1">Bicasso 1</option>
+          <option value="Bicasso 2">Bicasso 2</option>
+          <option value="Bicasso Nana">Bicasso Nana</option>
+        </select>
       </div>
     </div>
 
@@ -662,14 +659,12 @@ function removeItem(id) {
 
 // ─── SUBMIT ──────────────────────────────────────────────────
 document.getElementById('btn-submit').addEventListener('click', function() {
-  var name  = document.getElementById('cust-name').value.trim();
-  var phone = document.getElementById('cust-phone').value.trim();
-  var notes = document.getElementById('cust-notes').value.trim();
+  var shop  = document.getElementById('cust-shop').value.trim();
   var errEl = document.getElementById('submit-error');
 
   errEl.style.display='none';
 
-  if (!name)  { errEl.textContent='⚠ Please enter your name.'; errEl.style.display='block'; return; }
+  if (!shop) { errEl.textContent='⚠ Please select a shop.'; errEl.style.display='block'; return; }
   if (cart.length===0) { errEl.textContent='⚠ Please add at least one item to your order.'; errEl.style.display='block'; return; }
 
   // Build clean items list (without internal IDs)
@@ -686,7 +681,7 @@ document.getElementById('btn-submit').addEventListener('click', function() {
       document.getElementById('loading-bar').style.display='none';
       if (result.success) {
         document.getElementById('order-id-display').textContent = result.orderId;
-        lastOrder = { orderId: result.orderId, customerName: name, customerPhone: phone, notes: notes, items: items, date: new Date().toLocaleDateString() };
+        lastOrder = { orderId: result.orderId, customerName: shop, items: items, date: new Date().toLocaleDateString() };
         document.getElementById('main-form').style.display='none';
         document.getElementById('success-screen').style.display='block';
       } else {
@@ -701,7 +696,7 @@ document.getElementById('btn-submit').addEventListener('click', function() {
       errEl.textContent='❌ Connection error. Please try again.';
       errEl.style.display='block';
     })
-    .submitOrder({ customerName:name, customerEmail:'', customerPhone:phone, notes:notes, items:items });
+    .submitOrder({ customerName:shop, customerEmail:'', customerPhone:'', notes:'', items:items });
 });
 
 // ─── SAVE ORDER AS PDF ────────────────────────────────────────
@@ -756,8 +751,7 @@ function saveOrderPdf() {
     +   '<table style="width:100%;border-collapse:collapse;margin-bottom:20px;font-size:.9rem">'
     +     '<tr><td style="padding:4px 0;color:#999;width:110px">Order ID</td><td style="font-weight:700;color:#1a1a2e">' + lastOrder.orderId + '</td></tr>'
     +     '<tr><td style="padding:4px 0;color:#999">Date</td><td style="color:#333">' + lastOrder.date + '</td></tr>'
-    +     '<tr><td style="padding:4px 0;color:#999">Customer</td><td style="color:#333"><strong>' + lastOrder.customerName + '</strong></td></tr>'
-    +     (lastOrder.customerPhone ? '<tr><td style="padding:4px 0;color:#999">Phone</td><td style="color:#333">' + lastOrder.customerPhone + '</td></tr>' : '')
+    +     '<tr><td style="padding:4px 0;color:#999">Shop</td><td style="color:#333"><strong>' + lastOrder.customerName + '</strong></td></tr>'
     +   '</table>'
     +   '<table style="width:100%;border-collapse:collapse;font-size:.9rem">'
     +     '<thead><tr style="background:#f8fafc">'
@@ -769,7 +763,7 @@ function saveOrderPdf() {
     +   '<div style="background:#1a1a2e;padding:12px 16px;margin-top:0;display:flex;justify-content:space-between;border-radius:0 0 8px 8px">'
     +     '<span style="color:#fff;font-weight:700">TOTAL</span><strong style="color:#fff;font-size:1.05rem">' + total + ' pcs</strong>'
     +   '</div>'
-    +   (lastOrder.notes ? '<div style="margin-top:12px;padding:10px 12px;background:#fffbeb;border-left:4px solid #f59e0b;font-size:.88rem;color:#555"><strong>Notes:</strong> ' + lastOrder.notes + '</div>' : '')
+    +   ''
     + '</div>';
 
   document.getElementById('pdf-overlay').style.display = 'block';
@@ -778,9 +772,7 @@ function saveOrderPdf() {
 
 function resetForm() {
   cart=[]; nextId=1; lastOrder=null;
-  document.getElementById('cust-name').value='';
-  document.getElementById('cust-phone').value='';
-  document.getElementById('cust-notes').value='';
+  document.getElementById('cust-shop').value='';
   if (prodSearchEl) prodSearchEl.value='';
   selProd.value=''; resetColor(); resetSize(); hideAvail();
   btnAdd.style.display='none';
