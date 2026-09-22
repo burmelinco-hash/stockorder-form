@@ -35,6 +35,11 @@ body{font-family:'Segoe UI',Arial,sans-serif;color:#222;overflow:hidden;height:1
 .app-store-tag{background:rgba(79,70,229,.6);color:#c7d2fe;font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:7px;text-transform:uppercase;letter-spacing:.04em}
 .btn-logout{background:none;border:1px solid rgba(255,255,255,.3);color:rgba(255,255,255,.7);padding:6px 13px;border-radius:7px;font-size:.8rem;cursor:pointer}
 .btn-logout:hover{border-color:rgba(255,255,255,.6);color:#fff}
+.btn-back{background:none;border:none;color:#fff;font-size:1.25rem;padding:6px 10px 6px 4px;cursor:pointer;line-height:1;opacity:.8}
+.btn-back:hover{opacity:1}
+.btn-refresh{background:none;border:1px solid rgba(255,255,255,.3);color:rgba(255,255,255,.7);padding:6px 10px;border-radius:7px;font-size:1rem;cursor:pointer;line-height:1}
+.btn-refresh:hover{border-color:rgba(255,255,255,.6);color:#fff}
+.btn-refresh.spinning{animation:spin .6s linear infinite}
 #app-body{flex:1;overflow:hidden;position:relative}
 .panel{position:absolute;inset:0;overflow-y:auto;display:none;-webkit-overflow-scrolling:touch}
 .panel.active{display:block}
@@ -196,11 +201,17 @@ tbody tr:last-child td{border-bottom:none}
 <!-- ── MAIN APP ── -->
 <div id="screen-app">
   <div id="app-topbar">
-    <div>
-      <span class="app-store-label" id="app-store-label">Store</span>
-      <span class="app-store-tag">Staff</span>
+    <div style="display:flex;align-items:center;gap:2px">
+      <button class="btn-back" id="btn-back" onclick="goBack()" style="display:none">&#8592;</button>
+      <div>
+        <span class="app-store-label" id="app-store-label">Store</span>
+        <span class="app-store-tag">Staff</span>
+      </div>
     </div>
-    <button class="btn-logout" onclick="appLogout()">Logout</button>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button class="btn-refresh" id="btn-refresh" onclick="refreshCurrent()" title="Refresh">&#8635;</button>
+      <button class="btn-logout" onclick="appLogout()">Logout</button>
+    </div>
   </div>
 
   <div id="app-body">
@@ -422,14 +433,52 @@ function appLogout() {
   switchStoreTab('mystock');
 }
 
+// ── NAVIGATION STATE ──────────────────────────────────────────────
+var CURRENT_PANEL = 'mystore';
+var CURRENT_TAB   = 'mystock';
+
+function updateBackBtn() {
+  var back = document.getElementById('btn-back');
+  if (!back) return;
+  var atHome = CURRENT_PANEL === 'mystore' && CURRENT_TAB === 'mystock';
+  back.style.display = atHome ? 'none' : 'inline-block';
+}
+
+function goBack() {
+  if (CURRENT_PANEL !== 'mystore') {
+    showPanel('mystore');
+  } else if (CURRENT_TAB !== 'mystock') {
+    switchStoreTab('mystock');
+  }
+}
+
+function refreshCurrent() {
+  var btn = document.getElementById('btn-refresh');
+  if (btn) { btn.classList.add('spinning'); setTimeout(function(){ btn.classList.remove('spinning'); }, 800); }
+  if (CURRENT_PANEL === 'mystore') {
+    ALL_RETAIL_STOCK = null;
+    CS_ROWS = null;
+    loadStoreStock();
+  } else if (CURRENT_PANEL === 'stores') {
+    ALL_RETAIL_STOCK = null;
+    CS_ROWS = null;
+    renderOtherStores();
+  } else if (CURRENT_PANEL === 'order') {
+    INVENTORY_LOADED = false;
+    loadInventory();
+  }
+}
+
 // ── APP NAVIGATION ────────────────────────────────────────────────
 function showPanel(name) {
+  CURRENT_PANEL = name;
   ['mystore','stores','order'].forEach(function(p) {
     document.getElementById('panel-' + p).classList.toggle('active', p === name);
     document.getElementById('nav-' + p).classList.toggle('active', p === name);
   });
   if (name === 'stores') renderOtherStores();
   if (name === 'order') loadInventory();
+  updateBackBtn();
 }
 
 // ── STOCK LOADING ─────────────────────────────────────────────────
@@ -456,6 +505,7 @@ function loadStoreStock() {
 
 // ── STORE TABS ────────────────────────────────────────────────────
 function switchStoreTab(tab) {
+  CURRENT_TAB = tab;
   ['mystock','sell','transfer','addstock'].forEach(function(t) {
     var el = document.getElementById('sp-tab-' + t);
     if (el) el.classList.toggle('active', t === tab);
@@ -464,6 +514,7 @@ function switchStoreTab(tab) {
   else if (tab === 'sell') renderSellTab();
   else if (tab === 'transfer') renderTransferTab();
   else if (tab === 'addstock') renderAddStockTab();
+  updateBackBtn();
 }
 
 // ── MY STOCK ──────────────────────────────────────────────────────
