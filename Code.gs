@@ -67,6 +67,7 @@ function handleApi(action, params, body) {
     case 'markDone':             out = markDone(body.orderId, body.password); break;
     case 'updateStockQty':       out = updateStockQty(body.productId, body.colorNum, body.size, body.newQty, body.password); break;
     case 'getAllRetailStock':     out = getAllRetailStock(); break;
+    case 'getStoreStock':        out = getRetailStock(body && body.storeName); break;
     case 'verifyRetailStore':    out = verifyRetailStore(body.storeName, body.password); break;
     case 'updateRetailStockQty': out = updateRetailStockQty(body.storeName, body.password, body.productId, body.colorNum, body.size, body.newQty); break;
     default:                     out = { success: false, error: 'Unknown action: ' + action };
