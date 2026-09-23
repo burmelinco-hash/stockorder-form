@@ -73,6 +73,7 @@ function handleApi(action, params, body) {
     case 'verifyRetailStore':    out = verifyRetailStore(body.storeName, body.password); break;
     case 'updateRetailStockQty': out = updateRetailStockQty(body.storeName, body.password, body.productId, body.colorNum, body.size, body.newQty); break;
     case 'addRetailStockItem':   out = addRetailStockItem(body.storeName, body.password, body.productId, body.category, body.colorNum, body.size, body.qty); break;
+    case 'addRetailStockItems':  out = addRetailStockItems(body.storeName, body.password, body.items); break;
     default:                     out = { success: false, error: 'Unknown action: ' + action };
   }
   return jsonOut(out);
@@ -743,6 +744,54 @@ function createRetailSheet(ss, sheetName) {
     return newSheet;
   } catch(e) {
     return null;
+  }
+}
+
+// ─── ADD MULTIPLE ROWS TO RETAIL STOCK SHEET (batch) ────────
+// items = [{productId, category, colorNum, size, qty}, ...]
+function addRetailStockItems(storeName, password, items) {
+  var validPass = (RETAIL_PASSWORDS[storeName] && password === RETAIL_PASSWORDS[storeName])
+               || password === EMPLOYEE_PASS;
+  if (!validPass) return { success: false, error: 'Wrong password.' };
+  try {
+    var ss        = SpreadsheetApp.getActiveSpreadsheet();
+    var sheetName = storeName + ' Stock';
+    var sheet     = ss.getSheetByName(sheetName);
+    if (!sheet) return { success: false, error: 'Sheet for "' + storeName + '" not found.' };
+
+    var data     = sheet.getDataRange().getValues();
+    var startRow = 1;
+    for (var h = 0; h < data.length; h++) {
+      if (String(data[h][1]).trim().toLowerCase() === 'product id') { startRow = h + 1; break; }
+    }
+
+    var results = [];
+    for (var n = 0; n < items.length; n++) {
+      var it = items[n];
+      var pid = String(it.productId).trim();
+      var col = String(it.colorNum).trim();
+      var sz  = String(it.size).trim();
+      var qty = parseInt(it.qty) || 0;
+      var found = false;
+      // Re-read data each iteration so previous appends are visible
+      var d2 = sheet.getDataRange().getValues();
+      for (var r = startRow; r < d2.length; r++) {
+        if (String(d2[r][1]).trim() === pid &&
+            String(d2[r][3]).trim() === col &&
+            String(d2[r][4]).trim() === sz) {
+          sheet.getRange(r + 1, 6).setValue(qty);
+          found = true; break;
+        }
+      }
+      if (!found) {
+        var compositeId = pid + col + sz;
+        sheet.appendRow([compositeId, pid, it.category || '', col, sz, qty]);
+      }
+      results.push({ size: sz, ok: true });
+    }
+    return { success: true, results: results };
+  } catch(err) {
+    return { success: false, error: err.toString() };
   }
 }
 

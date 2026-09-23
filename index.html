@@ -402,7 +402,7 @@ var API_URL = 'https://script.google.com/macros/s/AKfycby-5YfvPpePbg1ni36sL5AI-D
 (function(){
   if (typeof google !== 'undefined' && google.script && google.script.run) return;
   var GET_ACTIONS = { getBusinessName:1, getInventory:1, getAllRetailStock:1 };
-  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'], addRetailStockItem:['storeName','password','productId','category','colorNum','size','qty'] };
+  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'], addRetailStockItem:['storeName','password','productId','category','colorNum','size','qty'], addRetailStockItems:['storeName','password','items'] };
   function makeRunner(){ var onOk=null,onErr=null; var runner={ withSuccessHandler:function(cb){onOk=cb;return runner;}, withFailureHandler:function(cb){onErr=cb;return runner;} }; function attach(name){ runner[name]=function(){ var args=arguments; function attempt(tries){ var ctrl=new AbortController(); var tid=setTimeout(function(){ctrl.abort();},20000); var req; if(GET_ACTIONS[name]){ req=fetch(API_URL+'?action='+encodeURIComponent(name),{signal:ctrl.signal}); }else{ var payload={action:name}; (POST_ARGS[name]||[]).forEach(function(k,i){payload[k]=args[i];}); req=fetch(API_URL,{method:'POST',body:JSON.stringify(payload),signal:ctrl.signal}); } req.then(function(r){clearTimeout(tid);if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(res){if(onOk)onOk(res);}).catch(function(err){ clearTimeout(tid); if(tries>0){ setTimeout(function(){attempt(tries-1);},1500); }else{ if(onErr)onErr(err); } }); } attempt(1); }; } Object.keys(GET_ACTIONS).forEach(attach); Object.keys(POST_ARGS).forEach(attach); return runner; }
   window.google=window.google||{}; window.google.script=window.google.script||{}; Object.defineProperty(window.google.script,'run',{get:makeRunner});
 })();
@@ -860,44 +860,33 @@ function doAddStock() {
   if (!AS_ROWS.length) { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Add at least one size.</span>'; return; }
 
   var rows = AS_ROWS.slice();
-  var done = 0, errors = [];
-  resEl.innerHTML = '<span style="color:#888">Saving 0 / ' + rows.length + '…</span>';
-
-  function saveNext(i) {
-    if (i >= rows.length) {
-      var colorKey = 'Color ' + color;
-      if (ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name]) {
-        var inv = ALL_RETAIL_STOCK[SESSION_STORE.name];
-        if (!inv[pid]) inv[pid] = {};
-        if (!inv[pid][colorKey]) inv[pid][colorKey] = {};
-        rows.forEach(function(r) { inv[pid][colorKey][r.size] = r.qty; });
-      }
-      if (errors.length) {
-        resEl.innerHTML = '<span style="color:#b91c1c">❌ ' + errors.join('; ') + '</span>';
-      } else {
+  resEl.innerHTML = '<span style="color:#888">Saving ' + rows.length + ' size' + (rows.length>1?'s':'') + '…</span>';
+  var items = rows.map(function(r){ return { productId: pid, category: '', colorNum: color, size: r.size, qty: r.qty }; });
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res.success) {
+        var colorKey = 'Color ' + color;
+        if (ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name]) {
+          var inv = ALL_RETAIL_STOCK[SESSION_STORE.name];
+          if (!inv[pid]) inv[pid] = {};
+          if (!inv[pid][colorKey]) inv[pid][colorKey] = {};
+          rows.forEach(function(r){ inv[pid][colorKey][r.size] = r.qty; });
+        }
         resEl.innerHTML = '<span style="color:#16a34a;font-weight:700">✅ Saved ' + rows.length + ' size' + (rows.length>1?'s':'') + ' for ' + pid + ' / Color ' + color + '</span>';
         AS_ROWS = [];
         document.getElementById('as-rows').innerHTML = '';
         document.getElementById('as-pid').value = '';
         document.getElementById('as-color').value = '';
         document.getElementById('as-pid').focus();
+      } else {
+        resEl.innerHTML = '<span style="color:#b91c1c">❌ ' + (res.error||'Error') + '</span>';
       }
-      return;
-    }
-    var r = rows[i];
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (res.success) { done++; } else { errors.push('Size ' + r.size + ': ' + (res.error||'Error')); }
-        resEl.innerHTML = '<span style="color:#888">Saving ' + (i+1) + ' / ' + rows.length + '…</span>';
-        saveNext(i + 1);
-      })
-      .withFailureHandler(function() {
-        errors.push('Size ' + r.size + ': connection error');
-        saveNext(i + 1);
-      })
-      .addRetailStockItem(SESSION_STORE.name, SESSION_STORE.pass, pid, '', color, r.size, r.qty);
-  }
-  saveNext(0);
+    })
+    .withFailureHandler(function() {
+      resEl.innerHTML = '<span style="color:#b91c1c">❌ Connection error — please try again.</span>';
+      showToast('Connection error — tap Retry', function(){ AS_ROWS = rows; doAddStock(); });
+    })
+    .addRetailStockItems(SESSION_STORE.name, SESSION_STORE.pass, items);
 }
 
 // ── OTHER STORES ──────────────────────────────────────────────────
