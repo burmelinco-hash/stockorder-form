@@ -459,6 +459,7 @@ function doStoreLogin() {
         if (result.success) {
           SESSION_STORE = { name: 'Palladium', pass: pass, isPalladium: true };
           ALL_ORDERS = result.orders || [];
+          try { localStorage.setItem('burmelin_session', JSON.stringify(SESSION_STORE)); } catch(e){}
           showApp();
         } else {
           errEl.textContent = '❌ Wrong password. Please try again.';
@@ -475,6 +476,7 @@ function doStoreLogin() {
         btn.textContent = 'Enter Store'; btn.disabled = false;
         if (result.success) {
           SESSION_STORE = { name: storeName, pass: pass };
+          try { localStorage.setItem('burmelin_session', JSON.stringify(SESSION_STORE)); } catch(e){}
           showApp();
         } else {
           errEl.textContent = '❌ Wrong passcode. Please try again.';
@@ -509,6 +511,7 @@ function showApp() {
 }
 
 function appLogout() {
+  try { localStorage.removeItem('burmelin_session'); } catch(e){}
   SESSION_STORE    = null;
   ALL_RETAIL_STOCK = null;
   ALL_ORDERS       = [];
@@ -1343,6 +1346,18 @@ function resetSize() { selSize.innerHTML='<option value="">— Choose size —</
 function hideAvail() { availBox.className='avail-box idle'; availTxt.textContent='Select product, color and size to check availability.'; }
 
 renderCart();
+
+// ── RESTORE SESSION ON PAGE LOAD ─────────────────────────────────
+(function() {
+  try {
+    var saved = localStorage.getItem('burmelin_session');
+    if (!saved) return;
+    var s = JSON.parse(saved);
+    if (!s || !s.name || !s.pass) return;
+    SESSION_STORE = s;
+    showApp();
+  } catch(e) {}
+})();
 
 // ════════════════════════════════════════════════════════════════
 //  PALLADIUM DASHBOARD — Orders · Wholesale Stock · Retail Stock
