@@ -843,7 +843,7 @@ function doAddStock() {
       resEl.innerHTML = '<span style="color:#b91c1c">❌ Failed. Please try again.</span>';
       showToast('Connection error — tap Retry', function(){ doAddStock(); });
     })
-    .updateRetailStockQty(SESSION_STORE.name, SESSION_STORE.pass, pid, color, size, qty);
+    .addRetailStockItem(SESSION_STORE.name, SESSION_STORE.pass, pid, '', color, size, qty);
 }
 
 // ── OTHER STORES ──────────────────────────────────────────────────

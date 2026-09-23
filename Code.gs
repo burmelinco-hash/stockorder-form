@@ -749,7 +749,9 @@ function createRetailSheet(ss, sheetName) {
 // ─── ADD NEW ROW TO RETAIL STOCK SHEET ───────────────────────
 // Palladium/employee only — appends a new product row to a store's sheet
 function addRetailStockItem(storeName, password, productId, category, colorNum, size, qty) {
-  if (password !== EMPLOYEE_PASS) return { success: false, error: 'Wrong password.' };
+  var validPass = (RETAIL_PASSWORDS[storeName] && password === RETAIL_PASSWORDS[storeName])
+               || password === EMPLOYEE_PASS;
+  if (!validPass) return { success: false, error: 'Wrong password.' };
   try {
     var ss        = SpreadsheetApp.getActiveSpreadsheet();
     var sheetName = storeName + ' Stock';
