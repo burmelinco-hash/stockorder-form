@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#1a1a2e">
-<title>Bicasso Staff</title>
+<title>Burmelin Staff</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',Arial,sans-serif;color:#222;overflow:hidden;height:100vh}
@@ -212,7 +212,7 @@ tbody tr:last-child td{border-bottom:none}
 <div id="screen-login">
   <div class="login-brand">
     <div class="login-logo">B</div>
-    <h1>Bicasso</h1>
+    <h1>BURMELIN</h1>
     <p>Store Staff Portal</p>
   </div>
   <div class="login-card">
@@ -492,7 +492,7 @@ function showApp() {
   document.getElementById('app-store-label').textContent = SESSION_STORE.name;
   document.getElementById('screen-login').style.display = 'none';
   document.getElementById('screen-app').classList.add('active');
-  try { google.script.run.withSuccessHandler(function(name){ if(name){ document.title='Bicasso Staff — '+name; } }).getBusinessName(); } catch(e){}
+  try { google.script.run.withSuccessHandler(function(name){ if(name){ document.title='Burmelin Staff — '+name; } }).getBusinessName(); } catch(e){}
   if (SESSION_STORE.isPalladium) {
     document.getElementById('screen-app').classList.add('pal-mode');
     document.getElementById('nav-mystore').innerHTML = '<span class="nav-icon">📋</span><span>Orders</span>';
