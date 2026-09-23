@@ -768,15 +768,14 @@ function addRetailStockItem(storeName, password, productId, category, colorNum, 
       if (String(data[r][1]).trim() === String(productId).trim() &&
           String(data[r][3]).trim() === String(colorNum).trim()  &&
           String(data[r][4]).trim() === String(size).trim()) {
-        return { success: false, error: 'Row already exists — use the edit button to change its qty.' };
+        // Row exists — update qty instead of failing
+        sheet.getRange(r + 1, 6).setValue(parseInt(qty) || 0);
+        return { success: true };
       }
     }
-    // Auto-ID: find max existing numeric ID in col A, add 1
-    var maxId = 0;
-    for (var i = startRow; i < data.length; i++) {
-      var v = parseInt(data[i][0]); if (!isNaN(v) && v > maxId) maxId = v;
-    }
-    sheet.appendRow([maxId + 1, productId, category || '', colorNum, size, parseInt(qty) || 0]);
+    // Composite ID: ProductID + Color + Size (e.g. T9027 + 91 + 48 = T9027914 8)
+    var compositeId = String(productId).trim() + String(colorNum).trim() + String(size).trim();
+    sheet.appendRow([compositeId, productId, category || '', colorNum, size, parseInt(qty) || 0]);
     return { success: true };
   } catch(err) {
     return { success: false, error: err.toString() };
