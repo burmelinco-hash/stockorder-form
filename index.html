@@ -788,62 +788,116 @@ function doTransfer() {
 }
 
 // ── ADD STOCK TAB ─────────────────────────────────────────────────
+var AS_ROWS = []; // pending size/qty rows before save
+
 function renderAddStockTab() {
+  AS_ROWS = [];
   document.getElementById('sp-body').innerHTML =
-    '<div style="font-size:.82rem;color:#888;margin-bottom:14px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px">Enter the product details exactly as they appear on the label, then set the stock quantity.</div>'
-    + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">Product ID <span style="color:#888;font-weight:400">(e.g. T9027)</span></label>'
+    '<div style="font-size:.82rem;color:#888;margin-bottom:14px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px">Enter the Product ID and Color once, then add all sizes.</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">'
+    + '<div><label style="display:block;font-size:.82rem;font-weight:600;color:#555;margin-bottom:4px">Product ID</label>'
     + '<input id="as-pid" type="text" placeholder="T9027" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()"'
-    + ' style="width:100%;padding:12px 14px;border:2px solid #e2e8f0;border-radius:9px;font-size:1rem;font-family:monospace;margin-bottom:12px;text-transform:uppercase">'
-    + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">Color # <span style="color:#888;font-weight:400">(e.g. 43)</span></label>'
+    + ' style="width:100%;padding:11px 12px;border:2px solid #e2e8f0;border-radius:9px;font-size:.95rem;font-family:monospace;text-transform:uppercase"></div>'
+    + '<div><label style="display:block;font-size:.82rem;font-weight:600;color:#555;margin-bottom:4px">Color #</label>'
     + '<input id="as-color" type="text" placeholder="43"'
-    + ' style="width:100%;padding:12px 14px;border:2px solid #e2e8f0;border-radius:9px;font-size:1rem;font-family:monospace;margin-bottom:12px">'
-    + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">Size <span style="color:#888;font-weight:400">(e.g. 52)</span></label>'
-    + '<input id="as-size" type="text" placeholder="52"'
-    + ' style="width:100%;padding:12px 14px;border:2px solid #e2e8f0;border-radius:9px;font-size:1rem;font-family:monospace;margin-bottom:12px">'
-    + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:5px">Quantity</label>'
-    + '<input id="as-qty" type="number" min="0" value="1"'
-    + ' style="width:100%;padding:12px 14px;border:2px solid #e2e8f0;border-radius:9px;font-size:1rem;margin-bottom:16px">'
-    + '<button onclick="doAddStock()" style="width:100%;padding:14px;background:#0ea5e9;color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer">＋ Save Stock</button>'
-    + '<div id="as-result" style="margin-top:14px;text-align:center;font-size:.92rem;min-height:24px"></div>';
+    + ' style="width:100%;padding:11px 12px;border:2px solid #e2e8f0;border-radius:9px;font-size:.95rem;font-family:monospace"></div>'
+    + '</div>'
+    + '<div style="font-size:.82rem;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Sizes</div>'
+    + '<div id="as-rows"></div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:14px;align-items:end">'
+    + '<div><label style="display:block;font-size:.8rem;color:#888;margin-bottom:3px">Size</label>'
+    + '<input id="as-size" type="text" placeholder="M" style="width:100%;padding:11px 12px;border:2px solid #e2e8f0;border-radius:9px;font-size:.95rem;font-family:monospace"></div>'
+    + '<div><label style="display:block;font-size:.8rem;color:#888;margin-bottom:3px">Qty</label>'
+    + '<input id="as-qty" type="number" min="0" value="1" style="width:100%;padding:11px 12px;border:2px solid #e2e8f0;border-radius:9px;font-size:.95rem"></div>'
+    + '<button onclick="asAddRow()" style="padding:11px 14px;background:#e0e7ff;color:#4338ca;border:none;border-radius:9px;font-size:1.2rem;font-weight:700;cursor:pointer;height:44px;margin-bottom:1px">＋</button>'
+    + '</div>'
+    + '<button onclick="doAddStock()" style="width:100%;padding:14px;background:#0ea5e9;color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer">💾 Save All</button>'
+    + '<div id="as-result" style="margin-top:12px;font-size:.88rem;min-height:20px"></div>';
   document.getElementById('as-pid').focus();
+}
+
+function asAddRow() {
+  var size = (document.getElementById('as-size').value || '').trim();
+  var qty  = parseInt(document.getElementById('as-qty').value);
+  if (!size) { document.getElementById('as-size').focus(); return; }
+  if (isNaN(qty) || qty < 0) qty = 0;
+  AS_ROWS.push({ size: size, qty: qty });
+  asRenderRows();
+  document.getElementById('as-size').value = '';
+  document.getElementById('as-qty').value = '1';
+  document.getElementById('as-size').focus();
+}
+
+function asRemoveRow(i) {
+  AS_ROWS.splice(i, 1);
+  asRenderRows();
+}
+
+function asRenderRows() {
+  var el = document.getElementById('as-rows');
+  if (!AS_ROWS.length) { el.innerHTML = ''; return; }
+  el.innerHTML = '<div style="background:#f8fafc;border-radius:10px;overflow:hidden;margin-bottom:10px;border:1px solid #e2e8f0">'
+    + AS_ROWS.map(function(r, i) {
+      return '<div style="display:flex;align-items:center;padding:9px 12px;border-bottom:1px solid #f0f2f5;gap:10px">'
+        + '<span style="flex:1;font-family:monospace;font-weight:700;color:#1a1a2e">Size ' + r.size + '</span>'
+        + '<span style="background:#dbeafe;color:#1e40af;padding:2px 10px;border-radius:10px;font-size:.82rem;font-weight:700">' + r.qty + ' pcs</span>'
+        + '<button onclick="asRemoveRow(' + i + ')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:.95rem;padding:2px 5px">✕</button>'
+        + '</div>';
+    }).join('')
+    + '</div>';
 }
 
 function doAddStock() {
   var pid   = (document.getElementById('as-pid').value || '').trim().toUpperCase();
   var color = (document.getElementById('as-color').value || '').trim();
-  var size  = (document.getElementById('as-size').value || '').trim();
-  var qty   = parseInt(document.getElementById('as-qty').value);
   var resEl = document.getElementById('as-result');
-  if (!pid)          { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter a product ID.</span>'; return; }
-  if (!color)        { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter a color number.</span>'; return; }
-  if (!size)         { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter a size.</span>'; return; }
-  if (isNaN(qty) || qty < 0) { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter a valid quantity.</span>'; return; }
-  resEl.innerHTML = '<span style="color:#888">Saving…</span>';
-  google.script.run
-    .withSuccessHandler(function(r) {
-      if (r.success) {
-        var colorKey = 'Color ' + color;
-        if (ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name]) {
-          var inv = ALL_RETAIL_STOCK[SESSION_STORE.name];
-          if (!inv[pid]) inv[pid] = {};
-          if (!inv[pid][colorKey]) inv[pid][colorKey] = {};
-          inv[pid][colorKey][size] = qty;
-        }
-        resEl.innerHTML = '<span style="color:#16a34a;font-weight:700">✓ ' + pid + ' / ' + color + ' / ' + size + ' → ' + qty + ' units saved</span>';
+  if (!pid)        { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter a product ID.</span>'; return; }
+  if (!color)      { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter a color number.</span>'; return; }
+  // Also pick up any size/qty typed but not yet added
+  var pendingSize = (document.getElementById('as-size').value || '').trim();
+  var pendingQty  = parseInt(document.getElementById('as-qty').value);
+  if (pendingSize) { AS_ROWS.push({ size: pendingSize, qty: isNaN(pendingQty) ? 0 : pendingQty }); asRenderRows(); document.getElementById('as-size').value=''; }
+  if (!AS_ROWS.length) { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Add at least one size.</span>'; return; }
+
+  var rows = AS_ROWS.slice();
+  var done = 0, errors = [];
+  resEl.innerHTML = '<span style="color:#888">Saving 0 / ' + rows.length + '…</span>';
+
+  function saveNext(i) {
+    if (i >= rows.length) {
+      var colorKey = 'Color ' + color;
+      if (ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name]) {
+        var inv = ALL_RETAIL_STOCK[SESSION_STORE.name];
+        if (!inv[pid]) inv[pid] = {};
+        if (!inv[pid][colorKey]) inv[pid][colorKey] = {};
+        rows.forEach(function(r) { inv[pid][colorKey][r.size] = r.qty; });
+      }
+      if (errors.length) {
+        resEl.innerHTML = '<span style="color:#b91c1c">❌ ' + errors.join('; ') + '</span>';
+      } else {
+        resEl.innerHTML = '<span style="color:#16a34a;font-weight:700">✅ Saved ' + rows.length + ' size' + (rows.length>1?'s':'') + ' for ' + pid + ' / Color ' + color + '</span>';
+        AS_ROWS = [];
+        document.getElementById('as-rows').innerHTML = '';
         document.getElementById('as-pid').value = '';
         document.getElementById('as-color').value = '';
-        document.getElementById('as-size').value = '';
-        document.getElementById('as-qty').value = '1';
         document.getElementById('as-pid').focus();
-      } else {
-        resEl.innerHTML = '<span style="color:#b91c1c">❌ ' + (r.error || 'Error') + '</span>';
       }
-    })
-    .withFailureHandler(function() {
-      resEl.innerHTML = '<span style="color:#b91c1c">❌ Failed. Please try again.</span>';
-      showToast('Connection error — tap Retry', function(){ doAddStock(); });
-    })
-    .addRetailStockItem(SESSION_STORE.name, SESSION_STORE.pass, pid, '', color, size, qty);
+      return;
+    }
+    var r = rows[i];
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res.success) { done++; } else { errors.push('Size ' + r.size + ': ' + (res.error||'Error')); }
+        resEl.innerHTML = '<span style="color:#888">Saving ' + (i+1) + ' / ' + rows.length + '…</span>';
+        saveNext(i + 1);
+      })
+      .withFailureHandler(function() {
+        errors.push('Size ' + r.size + ': connection error');
+        saveNext(i + 1);
+      })
+      .addRetailStockItem(SESSION_STORE.name, SESSION_STORE.pass, pid, '', color, r.size, r.qty);
+  }
+  saveNext(0);
 }
 
 // ── OTHER STORES ──────────────────────────────────────────────────
