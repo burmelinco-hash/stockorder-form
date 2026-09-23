@@ -402,7 +402,7 @@ var API_URL = 'https://script.google.com/macros/s/AKfycby-5YfvPpePbg1ni36sL5AI-D
 (function(){
   if (typeof google !== 'undefined' && google.script && google.script.run) return;
   var GET_ACTIONS = { getBusinessName:1, getInventory:1, getAllRetailStock:1 };
-  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'] };
+  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'], addRetailStockItem:['storeName','password','productId','category','colorNum','size','qty'] };
   function makeRunner(){ var onOk=null,onErr=null; var runner={ withSuccessHandler:function(cb){onOk=cb;return runner;}, withFailureHandler:function(cb){onErr=cb;return runner;} }; function attach(name){ runner[name]=function(){ var args=arguments; function attempt(tries){ var ctrl=new AbortController(); var tid=setTimeout(function(){ctrl.abort();},20000); var req; if(GET_ACTIONS[name]){ req=fetch(API_URL+'?action='+encodeURIComponent(name),{signal:ctrl.signal}); }else{ var payload={action:name}; (POST_ARGS[name]||[]).forEach(function(k,i){payload[k]=args[i];}); req=fetch(API_URL,{method:'POST',body:JSON.stringify(payload),signal:ctrl.signal}); } req.then(function(r){clearTimeout(tid);if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(res){if(onOk)onOk(res);}).catch(function(err){ clearTimeout(tid); if(tries>0){ setTimeout(function(){attempt(tries-1);},1500); }else{ if(onErr)onErr(err); } }); } attempt(1); }; } Object.keys(GET_ACTIONS).forEach(attach); Object.keys(POST_ARGS).forEach(attach); return runner; }
   window.google=window.google||{}; window.google.script=window.google.script||{}; Object.defineProperty(window.google.script,'run',{get:makeRunner});
 })();
@@ -1635,7 +1635,24 @@ function palRenderRetailView(){
     return '<button onclick="palSelectRetailStore(\''+palEsc(s)+'\')" style="flex:1;padding:9px 4px;border-radius:8px;border:2px solid #7c3aed;font-size:.8rem;font-weight:700;cursor:pointer;background:'+(a?'#7c3aed':'#fff')+';color:'+(a?'#fff':'#7c3aed')+'">'+s+'</button>';
   }).join('');
   el.innerHTML='<div style="display:flex;gap:7px;margin-bottom:12px">'+tabs+'</div>'
-    +'<input type="text" placeholder="Search products…" oninput="palFilterRetail(this.value)" style="width:100%;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:.9rem;margin-bottom:12px">'
+    +'<div style="display:flex;gap:8px;margin-bottom:12px">'
+    +'<input type="text" id="pal-retail-search" placeholder="Search products…" oninput="palFilterRetail(this.value)" style="flex:1;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:.9rem">'
+    +'<button onclick="palShowAddItemForm()" style="padding:10px 14px;background:#7c3aed;color:#fff;border:none;border-radius:10px;font-weight:700;font-size:.9rem;cursor:pointer;white-space:nowrap">+ Add</button>'
+    +'</div>'
+    +'<div id="pal-add-item-form" style="display:none;background:#f5f3ff;border:2px solid #7c3aed;border-radius:12px;padding:14px;margin-bottom:12px">'
+    +'<div style="font-size:.78rem;font-weight:700;color:#5b21b6;text-transform:uppercase;margin-bottom:10px">Add New Item to '+PAL_RETAIL_TAB+'</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'
+    +'<input id="pai-pid" placeholder="Product ID (e.g. T9027)" style="padding:9px 11px;border:2px solid #ddd6fe;border-radius:8px;font-size:.88rem">'
+    +'<input id="pai-cat" placeholder="Category (e.g. T-Shirt)" style="padding:9px 11px;border:2px solid #ddd6fe;border-radius:8px;font-size:.88rem">'
+    +'<input id="pai-color" placeholder="Color # (e.g. 1)" style="padding:9px 11px;border:2px solid #ddd6fe;border-radius:8px;font-size:.88rem">'
+    +'<input id="pai-size" placeholder="Size (e.g. M)" style="padding:9px 11px;border:2px solid #ddd6fe;border-radius:8px;font-size:.88rem">'
+    +'<input id="pai-qty" type="number" min="0" placeholder="Qty" style="padding:9px 11px;border:2px solid #ddd6fe;border-radius:8px;font-size:.88rem">'
+    +'</div>'
+    +'<div id="pai-msg" style="font-size:.83rem;min-height:16px;margin-bottom:8px"></div>'
+    +'<div style="display:flex;gap:8px">'
+    +'<button onclick="palSaveAddItem()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-weight:700;cursor:pointer">Save</button>'
+    +'<button onclick="palHideAddItemForm()" style="background:#fff;border:2px solid #ddd6fe;color:#5b21b6;border-radius:8px;padding:9px 14px;font-weight:600;cursor:pointer">Cancel</button>'
+    +'</div></div>'
     +'<div id="pal-retail-list">'+palBuildRetailList(PAL_RETAIL_TAB,'')+'</div>';
 }
 
@@ -1692,6 +1709,40 @@ function palSaveRetail(cid,pid,cn,sz,storeName){
     })
     .withFailureHandler(function(){ alert('Save failed.'); palCancelRetail(cid,pid,cn,sz,storeName); })
     .updateRetailStockQty(storeName,SESSION_STORE.pass,pid,cn,sz,newQty);
+}
+
+function palShowAddItemForm(){ var f=document.getElementById('pal-add-item-form'); if(f){ f.style.display='block'; document.getElementById('pai-pid').focus(); } }
+function palHideAddItemForm(){ var f=document.getElementById('pal-add-item-form'); if(f) f.style.display='none'; }
+
+function palSaveAddItem(){
+  var pid=document.getElementById('pai-pid').value.trim();
+  var cat=document.getElementById('pai-cat').value.trim();
+  var color=document.getElementById('pai-color').value.trim();
+  var size=document.getElementById('pai-size').value.trim();
+  var qty=parseInt(document.getElementById('pai-qty').value)||0;
+  var msg=document.getElementById('pai-msg');
+  if(!pid||!color||!size){ msg.style.color='#b91c1c'; msg.textContent='⚠ Product ID, Color and Size are required.'; return; }
+  msg.style.color='#5b21b6'; msg.textContent='Saving…';
+  google.script.run
+    .withSuccessHandler(function(r){
+      if(r&&r.success){
+        if(!ALL_RETAIL_STOCK) ALL_RETAIL_STOCK={};
+        if(!ALL_RETAIL_STOCK[PAL_RETAIL_TAB]) ALL_RETAIL_STOCK[PAL_RETAIL_TAB]={};
+        if(!ALL_RETAIL_STOCK[PAL_RETAIL_TAB][pid]) ALL_RETAIL_STOCK[PAL_RETAIL_TAB][pid]={};
+        if(!ALL_RETAIL_STOCK[PAL_RETAIL_TAB][pid][color]) ALL_RETAIL_STOCK[PAL_RETAIL_TAB][pid][color]={};
+        ALL_RETAIL_STOCK[PAL_RETAIL_TAB][pid][color][size]=qty;
+        palHideAddItemForm();
+        document.getElementById('pai-pid').value='';
+        document.getElementById('pai-cat').value='';
+        document.getElementById('pai-color').value='';
+        document.getElementById('pai-size').value='';
+        document.getElementById('pai-qty').value='';
+        var q=document.getElementById('pal-retail-search'); var sv=q?q.value:'';
+        document.getElementById('pal-retail-list').innerHTML=palBuildRetailList(PAL_RETAIL_TAB,sv);
+      } else { msg.style.color='#b91c1c'; msg.textContent='❌ '+(r&&r.error||'Error'); }
+    })
+    .withFailureHandler(function(){ msg.style.color='#b91c1c'; msg.textContent='❌ Connection error.'; })
+    .addRetailStockItem(PAL_RETAIL_TAB,SESSION_STORE.pass,pid,cat,color,size,qty);
 }
 
 function palCancelRetail(cid,pid,cn,sz,storeName){

@@ -72,6 +72,7 @@ function handleApi(action, params, body) {
     case 'transferStock':        out = transferStock(body.fromStore, body.toStore, body.password, body.rowId, body.qty); break;
     case 'verifyRetailStore':    out = verifyRetailStore(body.storeName, body.password); break;
     case 'updateRetailStockQty': out = updateRetailStockQty(body.storeName, body.password, body.productId, body.colorNum, body.size, body.newQty); break;
+    case 'addRetailStockItem':   out = addRetailStockItem(body.storeName, body.password, body.productId, body.category, body.colorNum, body.size, body.qty); break;
     default:                     out = { success: false, error: 'Unknown action: ' + action };
   }
   return jsonOut(out);
@@ -742,6 +743,41 @@ function createRetailSheet(ss, sheetName) {
     return newSheet;
   } catch(e) {
     return null;
+  }
+}
+
+// ─── ADD NEW ROW TO RETAIL STOCK SHEET ───────────────────────
+// Palladium/employee only — appends a new product row to a store's sheet
+function addRetailStockItem(storeName, password, productId, category, colorNum, size, qty) {
+  if (password !== EMPLOYEE_PASS) return { success: false, error: 'Wrong password.' };
+  try {
+    var ss        = SpreadsheetApp.getActiveSpreadsheet();
+    var sheetName = storeName + ' Stock';
+    var sheet     = ss.getSheetByName(sheetName);
+    if (!sheet) return { success: false, error: 'Sheet for "' + storeName + '" not found.' };
+
+    var data     = sheet.getDataRange().getValues();
+    // Check it doesn't already exist
+    var startRow = 1;
+    for (var h = 0; h < data.length; h++) {
+      if (String(data[h][1]).trim().toLowerCase() === 'product id') { startRow = h + 1; break; }
+    }
+    for (var r = startRow; r < data.length; r++) {
+      if (String(data[r][1]).trim() === String(productId).trim() &&
+          String(data[r][3]).trim() === String(colorNum).trim()  &&
+          String(data[r][4]).trim() === String(size).trim()) {
+        return { success: false, error: 'Row already exists — use the edit button to change its qty.' };
+      }
+    }
+    // Auto-ID: find max existing numeric ID in col A, add 1
+    var maxId = 0;
+    for (var i = startRow; i < data.length; i++) {
+      var v = parseInt(data[i][0]); if (!isNaN(v) && v > maxId) maxId = v;
+    }
+    sheet.appendRow([maxId + 1, productId, category || '', colorNum, size, parseInt(qty) || 0]);
+    return { success: true };
+  } catch(err) {
+    return { success: false, error: err.toString() };
   }
 }
 
