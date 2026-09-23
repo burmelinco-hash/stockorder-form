@@ -8,7 +8,7 @@
 var BUSINESS_NAME        = 'Burmelin';          // Your business name
 var EMPLOYEE_PASS        = 'employee2024';         // Password for employee dashboard
 var ORDERS_TAB_NAME      = 'Orders';               // Name for the new orders tab
-var INVENTORY_SHEET_NAME = 'Updated Size Chart';   // Your inventory tab name
+var INVENTORY_SHEET_NAME = 'Size Chart';            // Your inventory tab name
 var RETAIL_PASSWORDS = {
   'Bicasso 1':    'b1store',
   'Bicasso 2':    'b2store',
