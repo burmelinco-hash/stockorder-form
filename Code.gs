@@ -1088,9 +1088,11 @@ function generateMasterSheet(password, targets) {
     var plan = ss.getSheetByName('Order Plan');
     if (!plan) { plan = ss.insertSheet('Order Plan'); } else { plan.clearContents(); plan.clearFormats(); }
 
-    var planRow = 1;
+    // Debug row 1: show received targets
+    plan.getRange(1,1).setValue('DEBUG targets: ' + JSON.stringify(targets).substring(0,500));
+    var planRow = 2;
     productOrder.forEach(function(pid) {
-      var pidTargets = targets[pid] || {};
+      var pidTargets = targets[pid] || targets[pid.trim()] || {};
       var sizes = sizeOrder[pid];
       var colors = colorOrder[pid];
       var numCols = sizes.length + 2;
