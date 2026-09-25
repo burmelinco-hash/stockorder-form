@@ -278,14 +278,15 @@ tbody tr:last-child td{border-bottom:none}
     <!-- Panel 3: Order from Palladium / Retail Stock (Palladium mode) -->
     <div id="panel-order" class="panel">
       <div id="pal-retail-wrap"><div class="panel-inner" id="pal-retail-content"></div></div>
-      <div class="order-banner">📋 Ordering from Palladium for <strong id="order-store-name"></strong></div>
+      <div class="order-banner">📋 Order from <strong id="order-store-name"></strong> to Palladium — items added to your stock when marked Done</div>
 
       <!-- Success screen (inside order panel) -->
       <div id="order-success">
         <div class="success-icon">🎉</div>
-        <h2>Order Received!</h2>
+        <h2>Order Sent!</h2>
         <div class="order-id-badge" id="order-id-display"></div>
-        <p>Thank you! Your order has been placed.</p>
+        <p>Your order has been placed with Palladium.</p>
+        <p style="font-size:.85rem;color:#888;margin-top:4px">Items will be added to your stock when Palladium marks it done.</p>
         <button class="btn-pdf" onclick="saveOrderPdf()">📄 Save Order as PDF</button>
         <button class="btn-new" onclick="resetOrderForm()">Place Another Order</button>
       </div>
@@ -1325,7 +1326,7 @@ document.getElementById('btn-submit').addEventListener('click', function() {
       errEl.textContent='❌ Connection error. Please try again.'; errEl.style.display='block';
       showToast('Connection error — tap Retry', function(){ document.getElementById('btn-submit').click(); });
     })
-    .submitOrder({customerName:shop,customerEmail:'',customerPhone:'',notes:'',items:items});
+    .submitOrder({customerName:shop,customerEmail:'',customerPhone:'',notes:'',items:items,orderType:'store',shopName:shop});
 });
 
 function resetOrderForm() {
@@ -1425,6 +1426,7 @@ function palShowOrderList(list, filter) {
 function palBuildOrderCard(order) {
   var sc=order.status==='Invoiced'?'pal-inv':order.status==='Completed'?'pal-done':'pal-pend';
   var done=order.status==='Completed';
+  var isStore=order.orderType==='store';
   var itemRows=(order.items||[]).map(function(it){
     return '<tr><td style="padding:7px 10px;font-weight:700;color:#1a1a2e;font-size:.85rem">'+it.product+'</td>'
       +'<td style="padding:7px 10px;color:#555;font-size:.85rem">'+it.color+'</td>'
@@ -1440,7 +1442,9 @@ function palBuildOrderCard(order) {
   return '<div class="pal-order-card" id="poc-'+order.orderId+'">'
     +'<div class="pal-order-hd" onclick="palToggleCard(\''+palEsc(order.orderId)+'\')">'
     +'<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:.88rem;color:#1a1a2e;font-family:monospace">'+order.orderId+'</div>'
-    +'<div style="font-size:.78rem;color:#aaa;margin-top:1px">'+order.date+'</div></div>'
+    +'<div style="font-size:.78rem;color:#aaa;margin-top:1px">'+order.date
+    +(isStore?'<span style="margin-left:6px;background:#ede9fe;color:#5b21b6;padding:1px 7px;border-radius:8px;font-size:.7rem;font-weight:700">🏪 '+order.shopName+'</span>':'')
+    +'</div></div>'
     +'<span class="pal-sbadge '+sc+'">'+order.status+'</span>'
     +'<span style="color:#bbb;font-size:.95rem">▾</span></div>'
     +'<div class="pal-order-body" id="pob-'+order.orderId+'">'
@@ -1454,7 +1458,7 @@ function palBuildOrderCard(order) {
     +'<div class="pal-act">'
     +(!done?'<button class="pal-btn" style="background:#2563eb;color:#fff" onclick="palPrintInvoice(\''+palEsc(order.orderId)+'\')">🖨 Invoice</button>':'')
     +(!done?'<button class="pal-btn" style="background:#f59e0b;color:#fff" onclick="palToggleEdit(\''+palEsc(order.orderId)+'\')">✏ Edit</button>':'')
-    +(!done?'<button class="pal-btn" style="background:#16a34a;color:#fff" id="pdone-'+order.orderId+'" onclick="palMarkDone(\''+palEsc(order.orderId)+'\')">✔ Done</button>':'<button class="pal-btn" style="background:#94a3b8;color:#fff" disabled>✔ Completed</button>')
+    +(!done?'<button class="pal-btn" style="background:#16a34a;color:#fff" id="pdone-'+order.orderId+'" onclick="palMarkDone(\''+palEsc(order.orderId)+'\')">'+(isStore?'✔ Send to Store':'✔ Done')+'</button>':'<button class="pal-btn" style="background:#94a3b8;color:#fff" disabled>✔ Completed</button>')
     +'<button class="pal-btn" style="background:#fff;color:#ef4444;border:2px solid #ef4444;margin-left:auto" onclick="palDeleteOrder(\''+palEsc(order.orderId)+'\')">🗑</button>'
     +'</div>'
     +(!done?'<div class="pal-edit-panel" id="pep-'+order.orderId+'">'
@@ -1508,7 +1512,12 @@ function palDeleteOrder(orderId) {
 }
 
 function palMarkDone(orderId) {
-  if(!confirm('Mark '+orderId+' as DONE?\nThis deducts stock from the sheet and cannot be undone.')) return;
+  var order=ALL_ORDERS.find(function(o){ return o.orderId===orderId; });
+  var isStore=order&&order.orderType==='store';
+  var msg=isStore
+    ?'Mark '+orderId+' as DONE?\nItems will be added to '+((order&&order.shopName)||'the store')+'\'s stock. Cannot be undone.'
+    :'Mark '+orderId+' as DONE?\nThis deducts stock from the sheet and cannot be undone.';
+  if(!confirm(msg)) return;
   var btn=document.getElementById('pdone-'+orderId), msg=document.getElementById('pmsg-'+orderId);
   if(btn){ btn.disabled=true; btn.textContent='⏳…'; }
   google.script.run

@@ -171,9 +171,9 @@ function submitOrder(orderData) {
       ordersSheet = ss.insertSheet(ORDERS_TAB_NAME);
       var headers = [['Order ID','Date','Customer Name','Customer Email',
                       'Customer Phone','Notes','Items (JSON)','Total Qty',
-                      'Status','Invoice Sent At','Completed At']];
-      ordersSheet.getRange(1, 1, 1, 11).setValues(headers);
-      ordersSheet.getRange(1, 1, 1, 11).setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+                      'Status','Invoice Sent At','Completed At','Order Type','Shop Name']];
+      ordersSheet.getRange(1, 1, 1, 13).setValues(headers);
+      ordersSheet.getRange(1, 1, 1, 13).setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
       ordersSheet.setFrozenRows(1);
       ordersSheet.setColumnWidth(7, 300); // Items column wider
     }
@@ -201,7 +201,9 @@ function submitOrder(orderData) {
       totalQty,
       'Pending',
       '',  // Invoice sent at
-      ''   // Completed at
+      '',  // Completed at
+      orderData.orderType || 'customer',
+      orderData.shopName  || ''
     ]);
 
     // Color-code the new row
@@ -235,7 +237,8 @@ function getOrders(password) {
     }
 
     var numRows = sheet.getLastRow() - 1;
-    var data    = sheet.getRange(2, 1, numRows, 11).getValues();
+    var numCols = sheet.getLastColumn();
+    var data    = sheet.getRange(2, 1, numRows, numCols).getValues();
 
     var orders = [];
     for (var i = 0; i < data.length; i++) {
@@ -252,7 +255,9 @@ function getOrders(password) {
         totalQty     : row[7],
         status       : row[8] || 'Pending',
         invoiceSent  : row[9],
-        completed    : row[10]
+        completed    : row[10],
+        orderType    : row[11] || 'customer',
+        shopName     : row[12] || ''
       });
     }
 
@@ -353,12 +358,26 @@ function markDone(orderId, password) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var warnings = [];
 
-    // Deduct stock for each item
-    for (var i = 0; i < order.items.length; i++) {
-      var item   = order.items[i];
-      var result = deductStock(ss, item);
-      if (!result.success) {
-        warnings.push(item.product + ' | ' + item.color + ' | ' + item.size + ': ' + result.error);
+    if (order.orderType === 'store' && order.shopName) {
+      // Store order: add ordered items to the shop's stock sheet
+      for (var j = 0; j < order.items.length; j++) {
+        var sit = order.items[j];
+        var lp  = sit.lp  || sit.product || '';
+        var lc  = sit.lc  || (sit.color || '').replace(/^Color\s*/i, '');
+        var ls  = sit.ls  || sit.size    || '';
+        var sres = addStockToStore(ss, order.shopName, lp, lc, ls, sit.qty || 0);
+        if (!sres.success) {
+          warnings.push(sit.product + ' | ' + sit.color + ' | ' + sit.size + ': ' + sres.error);
+        }
+      }
+    } else {
+      // Customer order: deduct stock from wholesale Size Chart
+      for (var i = 0; i < order.items.length; i++) {
+        var item   = order.items[i];
+        var result = deductStock(ss, item);
+        if (!result.success) {
+          warnings.push(item.product + ' | ' + item.color + ' | ' + item.size + ': ' + result.error);
+        }
       }
     }
 
@@ -452,7 +471,8 @@ function findOrder(orderId) {
   var sheet = ss.getSheetByName(ORDERS_TAB_NAME);
   if (!sheet || sheet.getLastRow() < 2) return null;
 
-  var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 11).getValues();
+  var numCols = sheet.getLastColumn();
+  var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, numCols).getValues();
   for (var i = 0; i < data.length; i++) {
     if (String(data[i][0]) === String(orderId)) {
       return {
@@ -465,7 +485,10 @@ function findOrder(orderId) {
         notes        : data[i][5],
         items        : JSON.parse(data[i][6] || '[]'),
         totalQty     : data[i][7],
-        status       : data[i][8]
+        status       : data[i][8],
+        invoiceSent  : data[i][9],
+        orderType    : data[i][11] || 'customer',
+        shopName     : data[i][12] || ''
       };
     }
   }
@@ -495,6 +518,41 @@ function updateOrderRow(orderId, updates) {
       if (updates.completed   !== undefined) sheet.getRange(r, 11).setValue(updates.completed);
       return;
     }
+  }
+}
+
+// ─── INTERNAL: ADD STOCK TO RETAIL STORE (used when marking store order Done) ─
+function addStockToStore(ss, shopName, productId, colorNum, size, qty) {
+  try {
+    var sheetName = shopName + ' Stock';
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet) return { success: false, error: 'Sheet not found for store: ' + shopName };
+
+    var data = sheet.getDataRange().getValues();
+    var startRow = 1;
+    for (var h = 0; h < data.length; h++) {
+      if (String(data[h][1]).trim().toLowerCase() === 'product id') { startRow = h + 1; break; }
+    }
+
+    var pid = String(productId).trim();
+    var col = String(colorNum).trim();
+    var sz  = String(size).trim();
+
+    for (var r = startRow; r < data.length; r++) {
+      if (String(data[r][1]).trim() === pid &&
+          String(data[r][3]).trim() === col &&
+          String(data[r][4]).trim() === sz) {
+        var cur = parseInt(data[r][5]) || 0;
+        sheet.getRange(r + 1, 6).setValue(cur + (parseInt(qty) || 0));
+        return { success: true };
+      }
+    }
+    // Row doesn't exist — create it
+    var compositeId = pid + col + sz;
+    sheet.appendRow([compositeId, pid, '', col, sz, parseInt(qty) || 0]);
+    return { success: true };
+  } catch(err) {
+    return { success: false, error: err.toString() };
   }
 }
 
