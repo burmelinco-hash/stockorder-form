@@ -205,7 +205,7 @@ tbody tr:last-child td{border-bottom:none}
 .pal-edit-qty{width:54px;padding:4px 6px;border:2px solid #fde68a;border-radius:6px;font-size:.88rem;text-align:center}
 .pal-edit-qty:focus{outline:none;border-color:#f59e0b}
 
-/* ── PLAN / REORDER VIEWS ── */
+/* ── MASTER / REORDER VIEWS ── */
 #nav-plan{display:none}
 .pal-mode #nav-plan{display:flex}
 .pal-mode #app-nav{grid-template-columns:1fr 1fr 1fr 1fr}
@@ -396,7 +396,7 @@ tbody tr:last-child td{border-bottom:none}
       </div>
     </div>
 
-    <!-- Panel 4: Purchase Plan (Palladium only) -->
+    <!-- Panel 4: Master (Palladium only) -->
     <div id="panel-plan" class="panel">
       <div class="panel-inner" id="plan-content"></div>
     </div>
@@ -414,7 +414,7 @@ tbody tr:last-child td{border-bottom:none}
       <span class="nav-icon">📋</span><span>Order</span>
     </button>
     <button class="nav-btn" id="nav-plan" onclick="showPanel('plan')">
-      <span class="nav-icon">📊</span><span>Plan</span>
+      <span class="nav-icon">📊</span><span>Master</span>
     </button>
   </nav>
 </div><!-- /screen-app -->
@@ -437,7 +437,7 @@ var API_URL = 'https://script.google.com/macros/s/AKfycby-5YfvPpePbg1ni36sL5AI-D
 (function(){
   if (typeof google !== 'undefined' && google.script && google.script.run) return;
   var GET_ACTIONS = { getBusinessName:1, getInventory:1, getAllRetailStock:1 };
-  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'], addRetailStockItem:['storeName','password','productId','category','colorNum','size','qty'], addRetailStockItems:['storeName','password','items'] };
+  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'], addRetailStockItem:['storeName','password','productId','category','colorNum','size','qty'], addRetailStockItems:['storeName','password','items'], generateMasterSheet:['password'] };
   function makeRunner(){ var onOk=null,onErr=null; var runner={ withSuccessHandler:function(cb){onOk=cb;return runner;}, withFailureHandler:function(cb){onErr=cb;return runner;} }; function attach(name){ runner[name]=function(){ var args=arguments; function attempt(tries){ var ctrl=new AbortController(); var tid=setTimeout(function(){ctrl.abort();},20000); var req; if(GET_ACTIONS[name]){ req=fetch(API_URL+'?action='+encodeURIComponent(name),{signal:ctrl.signal}); }else{ var payload={action:name}; (POST_ARGS[name]||[]).forEach(function(k,i){payload[k]=args[i];}); req=fetch(API_URL,{method:'POST',body:JSON.stringify(payload),signal:ctrl.signal}); } req.then(function(r){clearTimeout(tid);if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(res){if(onOk)onOk(res);}).catch(function(err){ clearTimeout(tid); if(tries>0){ setTimeout(function(){attempt(tries-1);},1500); }else{ if(onErr)onErr(err); } }); } attempt(1); }; } Object.keys(GET_ACTIONS).forEach(attach); Object.keys(POST_ARGS).forEach(attach); return runner; }
   window.google=window.google||{}; window.google.script=window.google.script||{}; Object.defineProperty(window.google.script,'run',{get:makeRunner});
 })();
@@ -535,7 +535,7 @@ function showApp() {
     document.getElementById('nav-mystore').innerHTML = '<span class="nav-icon">📋</span><span>Orders</span>';
     document.getElementById('nav-stores').innerHTML  = '<span class="nav-icon">📦</span><span>Stock</span>';
     document.getElementById('nav-order').innerHTML   = '<span class="nav-icon">🏪</span><span>Retail</span>';
-    document.getElementById('nav-plan').innerHTML    = '<span class="nav-icon">📊</span><span>Plan</span>';
+    document.getElementById('nav-plan').innerHTML    = '<span class="nav-icon">📊</span><span>Master</span>';
     showPanel('mystore');
     palRenderOrders(PAL_FILTER);
   } else {
@@ -1907,17 +1907,18 @@ function palRenderPlan() {
   var inv = STOCK_DATA && STOCK_DATA.inventory; if (!inv) return;
   var RETAIL = ['Bicasso 1','Bicasso 2','Bicasso Nana'];
 
-  function retailQty(s, pid, colorKey, size) {
-    return (ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[s] && ALL_RETAIL_STOCK[s][pid] &&
-            ALL_RETAIL_STOCK[s][pid][colorKey] && ALL_RETAIL_STOCK[s][pid][colorKey][size]) || 0;
+  function rQty(s, pid, colorKey, size) {
+    return parseInt((ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[s] && ALL_RETAIL_STOCK[s][pid] &&
+            ALL_RETAIL_STOCK[s][pid][colorKey] && ALL_RETAIL_STOCK[s][pid][colorKey][size]) || 0);
   }
-  function palQty(pid, colorKey, size) {
-    return (inv[pid] && inv[pid][colorKey] && inv[pid][colorKey][size]) || 0;
+  function pQty(pid, colorKey, size) {
+    return parseInt((inv[pid] && inv[pid][colorKey] && inv[pid][colorKey][size]) || 0);
   }
 
-  var html = '<div style="font-size:.82rem;font-weight:700;color:#555;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between">'
-    + '<span>📊 Purchase Planning</span>'
-    + '<span style="font-size:.75rem;color:#aaa;font-weight:400">Pal / Net (all stores)</span>'
+  var html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px">'
+    + '<div><div style="font-size:.88rem;font-weight:700;color:#1a1a2e">📊 Master Stock</div>'
+    + '<div style="font-size:.72rem;color:#aaa;margin-top:1px">Pal / Net — row & column totals included</div></div>'
+    + '<button id="btn-gen-master" onclick="palGenerateMasterSheet()" style="background:#4f46e5;border:none;color:#fff;padding:8px 13px;border-radius:8px;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap">📋 Save to Sheet</button>'
     + '</div>';
 
   STOCK_DATA.groups.forEach(function(g) {
@@ -1928,43 +1929,94 @@ function palRenderPlan() {
       allSizes.sort(function(a,b){ return parseFloat(a)-parseFloat(b); });
       var colors = Object.keys(prodData);
 
+      // Pre-compute all values for totals
+      var cellPal = {}, cellNet = {};
+      colors.forEach(function(ck) {
+        allSizes.forEach(function(sz) {
+          var key = ck + '|' + sz;
+          var exists = prodData[ck] && prodData[ck][sz] !== undefined;
+          cellPal[key] = exists ? pQty(pid, ck, sz) : null;
+          cellNet[key] = exists ? (cellPal[key] + RETAIL.reduce(function(s,st){ return s + rQty(st,pid,ck,sz); }, 0)) : null;
+        });
+      });
+
+      // Column totals (per size)
+      var colTotalPal = {}, colTotalNet = {};
+      allSizes.forEach(function(sz) {
+        var tp = 0, tn = 0;
+        colors.forEach(function(ck) {
+          var key = ck + '|' + sz;
+          if (cellPal[key] !== null) { tp += cellPal[key]; tn += cellNet[key]; }
+        });
+        colTotalPal[sz] = tp; colTotalNet[sz] = tn;
+      });
+
+      // Grand totals
+      var grandPal = 0, grandNet = 0;
+      allSizes.forEach(function(sz){ grandPal += colTotalPal[sz]; grandNet += colTotalNet[sz]; });
+
       html += '<div class="plan-product">'
         + '<div class="plan-product-hd">'
         + '<span style="font-weight:700;font-family:monospace">' + pid + '</span>'
         + '<span style="font-size:.72rem;opacity:.6;margin-left:8px">' + g.label + '</span>'
-        + '<button onclick="palPrintProduct(\'' + palEsc(pid) + '\')" style="margin-left:auto;background:rgba(255,255,255,.18);border:none;color:#fff;padding:4px 11px;border-radius:6px;font-size:.75rem;font-weight:700;cursor:pointer">🖨 Print</button>'
         + '</div>'
         + '<div class="plan-grid-wrap"><table class="plan-grid"><thead><tr>'
         + '<th class="plan-th plan-th-label">Color</th>'
         + allSizes.map(function(sz){ return '<th class="plan-th">' + sz + '</th>'; }).join('')
+        + '<th class="plan-th" style="background:#1a1a2e;color:#c7d2fe;border-left:2px solid #374151">Total</th>'
         + '</tr></thead><tbody>';
 
       colors.forEach(function(colorKey) {
         var cn = colorKey.replace(/^Color\s*/i,'');
+        var rowPal = 0, rowNet = 0;
+        allSizes.forEach(function(sz) {
+          var key = colorKey + '|' + sz;
+          if (cellPal[key] !== null) { rowPal += cellPal[key]; rowNet += cellNet[key]; }
+        });
+
         html += '<tr><td class="plan-td-label">Clr ' + cn + '</td>';
         allSizes.forEach(function(sz) {
-          var pq = palQty(pid, colorKey, sz);
-          var rt = RETAIL.reduce(function(s,store){ return s + parseInt(retailQty(store,pid,colorKey,sz)||0); }, 0);
-          var net = pq + rt;
-          var bgClass = pq === 0 ? 'pc-zero' : pq <= 3 ? 'pc-low' : 'pc-ok';
-          var exists = prodData[colorKey] && prodData[colorKey][sz] !== undefined;
-          if (!exists) { html += '<td class="plan-cell" style="background:#f8fafc"><span style="color:#e2e8f0">—</span></td>'; }
+          var key = colorKey + '|' + sz;
+          var pq = cellPal[key]; var net = cellNet[key];
+          if (pq === null) { html += '<td class="plan-cell" style="background:#f8fafc"><span style="color:#e2e8f0">—</span></td>'; }
           else {
-            html += '<td class="plan-cell ' + bgClass + '">'
-              + '<div class="plan-cell-inner">'
-              + '<span class="plan-pal">' + pq + '</span>'
-              + '<span class="plan-net">/' + net + '</span>'
-              + '</div></td>';
+            var bgClass = pq === 0 ? 'pc-zero' : pq <= 3 ? 'pc-low' : 'pc-ok';
+            html += '<td class="plan-cell ' + bgClass + '"><div class="plan-cell-inner"><span class="plan-pal">' + pq + '</span><span class="plan-net">/' + net + '</span></div></td>';
           }
         });
+        // Row total
+        html += '<td class="plan-cell" style="background:#e0e7ff;border-left:2px solid #c7d2fe"><div class="plan-cell-inner"><span class="plan-pal" style="color:#3730a3">' + rowPal + '</span><span class="plan-net">/' + rowNet + '</span></div></td>';
         html += '</tr>';
       });
 
-      html += '</tbody></table></div></div>';
+      // Column total row
+      html += '<tr style="border-top:2px solid #c7d2fe"><td class="plan-td-label" style="background:#e0e7ff;color:#3730a3;font-weight:700">Total</td>';
+      allSizes.forEach(function(sz) {
+        html += '<td class="plan-cell" style="background:#e0e7ff"><div class="plan-cell-inner"><span class="plan-pal" style="color:#3730a3">' + colTotalPal[sz] + '</span><span class="plan-net">/' + colTotalNet[sz] + '</span></div></td>';
+      });
+      // Grand total corner
+      html += '<td class="plan-cell" style="background:#1a1a2e;border-left:2px solid #374151"><div class="plan-cell-inner"><span class="plan-pal" style="color:#c7d2fe">' + grandPal + '</span><span class="plan-net" style="color:rgba(199,210,254,.6)">/' + grandNet + '</span></div></td>';
+      html += '</tr></tbody></table></div></div>';
     });
   });
 
   el.innerHTML = html;
+}
+
+function palGenerateMasterSheet() {
+  var btn = document.getElementById('btn-gen-master');
+  if (btn) { btn.textContent = '⏳ Saving…'; btn.disabled = true; }
+  google.script.run
+    .withSuccessHandler(function(r) {
+      if (btn) { btn.textContent = '📋 Save to Sheet'; btn.disabled = false; }
+      if (r && r.success) showToast('✅ Master sheet updated — ' + r.rows + ' rows · ' + r.updated);
+      else showToast('❌ ' + (r && r.error || 'Error'));
+    })
+    .withFailureHandler(function() {
+      if (btn) { btn.textContent = '📋 Save to Sheet'; btn.disabled = false; }
+      showToast('❌ Connection error');
+    })
+    .generateMasterSheet(SESSION_STORE.pass);
 }
 
 function palPrintProduct(pid) {

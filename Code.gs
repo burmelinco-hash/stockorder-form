@@ -73,7 +73,8 @@ function handleApi(action, params, body) {
     case 'verifyRetailStore':    out = verifyRetailStore(body.storeName, body.password); break;
     case 'updateRetailStockQty': out = updateRetailStockQty(body.storeName, body.password, body.productId, body.colorNum, body.size, body.newQty); break;
     case 'addRetailStockItem':   out = addRetailStockItem(body.storeName, body.password, body.productId, body.category, body.colorNum, body.size, body.qty); break;
-    case 'addRetailStockItems':  out = addRetailStockItems(body.storeName, body.password, body.items); break;
+    case 'addRetailStockItems':    out = addRetailStockItems(body.storeName, body.password, body.items); break;
+    case 'generateMasterSheet':  out = generateMasterSheet(body.password); break;
     default:                     out = { success: false, error: 'Unknown action: ' + action };
   }
   return jsonOut(out);
@@ -964,4 +965,103 @@ function buildInvoiceHtml(order) {
   +   '<p style="margin:0">Thank you for your order! Questions? Just reply to this email.</p>'
   + '</div>'
   + '</div></body></html>';
+}
+
+// ─── GENERATE MASTER SHEET ───────────────────────────────────────
+// Creates/refreshes a "Master" tab with full stock overview:
+// Product ID | Color | Size | Palladium | Bicasso 1 | Bicasso 2 | Bicasso Nana | Total | Status
+function generateMasterSheet(password) {
+  if (password !== EMPLOYEE_PASS) return { success: false, error: 'Wrong password.' };
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var MASTER_NAME = 'Master';
+    var master = ss.getSheetByName(MASTER_NAME);
+    if (!master) {
+      master = ss.insertSheet(MASTER_NAME);
+    } else {
+      master.clearContents();
+      master.clearFormats();
+    }
+
+    var RETAIL_STORES = ['Bicasso 1', 'Bicasso 2', 'Bicasso Nana'];
+    var headers = ['Product ID', 'Color', 'Size', 'Palladium', 'Bicasso 1', 'Bicasso 2', 'Bicasso Nana', 'Total Network', 'Status'];
+    master.getRange(1, 1, 1, headers.length).setValues([headers])
+      .setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+    master.setFrozenRows(1);
+
+    // Load wholesale (Palladium) stock from Size Chart
+    var wholesaleSheet = null;
+    var sheets = ss.getSheets();
+    for (var i = 0; i < sheets.length; i++) {
+      if (sheets[i].getName().trim() === INVENTORY_SHEET_NAME.trim()) { wholesaleSheet = sheets[i]; break; }
+    }
+    if (!wholesaleSheet) return { success: false, error: 'Wholesale sheet not found.' };
+
+    var wData = wholesaleSheet.getDataRange().getValues();
+    var wStart = 1;
+    for (var h = 0; h < wData.length; h++) {
+      if (String(wData[h][1]).trim().toLowerCase() === 'product id') { wStart = h + 1; break; }
+    }
+
+    // Load each retail store stock into a lookup map
+    var retailMap = {};
+    RETAIL_STORES.forEach(function(storeName) {
+      retailMap[storeName] = {};
+      var sheet = ss.getSheetByName(storeName + ' Stock');
+      if (!sheet) return;
+      var data = sheet.getDataRange().getValues();
+      var start = 1;
+      for (var h = 0; h < data.length; h++) {
+        if (String(data[h][1]).trim().toLowerCase() === 'product id') { start = h + 1; break; }
+      }
+      for (var r = start; r < data.length; r++) {
+        var pid = String(data[r][1]).trim();
+        var cn  = String(data[r][3]).trim();
+        var sz  = String(data[r][4]).trim();
+        var qty = parseInt(data[r][5]) || 0;
+        if (!pid || !cn || !sz) continue;
+        var key = pid + '||' + cn + '||' + sz;
+        retailMap[storeName][key] = qty;
+      }
+    });
+
+    // Build data rows from wholesale reference
+    var rows = [];
+    var bgColors = [];
+    for (var r = wStart; r < wData.length; r++) {
+      var row = wData[r];
+      var pid    = String(row[1]).trim();
+      var cn     = String(row[3]).trim();
+      var sz     = String(row[4]).trim();
+      var palQty = parseInt(row[5]) || 0;
+      if (!pid || !cn || !sz) continue;
+
+      var key = pid + '||' + cn + '||' + sz;
+      var b1  = retailMap['Bicasso 1'][key]    || 0;
+      var b2  = retailMap['Bicasso 2'][key]    || 0;
+      var bn  = retailMap['Bicasso Nana'][key] || 0;
+      var total = palQty + b1 + b2 + bn;
+      var status = palQty === 0 ? 'Order Now' : palQty <= 3 ? 'Low' : 'OK';
+
+      rows.push([pid, cn, sz, palQty, b1, b2, bn, total, status]);
+      bgColors.push(status === 'Order Now' ? '#fee2e2' : status === 'Low' ? '#fef9c3' : '#f0fdf4');
+    }
+
+    if (rows.length) {
+      master.getRange(2, 1, rows.length, headers.length).setValues(rows);
+      // Color-code the Status and Palladium columns
+      for (var i = 0; i < rows.length; i++) {
+        var bg = bgColors[i];
+        master.getRange(i + 2, 9).setBackground(bg).setFontWeight('bold');
+        master.getRange(i + 2, 4).setBackground(bg);
+      }
+    }
+
+    master.autoResizeColumns(1, headers.length);
+    var dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
+    return { success: true, rows: rows.length, updated: dateStr };
+
+  } catch(err) {
+    return { success: false, error: err.toString() };
+  }
 }
