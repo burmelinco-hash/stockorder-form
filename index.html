@@ -1907,7 +1907,6 @@ function palRenderPlan() {
   var inv = STOCK_DATA && STOCK_DATA.inventory; if (!inv) return;
   var RETAIL = ['Bicasso 1','Bicasso 2','Bicasso Nana'];
 
-  // Helper: get retail stock for pid/colorKey/size
   function retailQty(s, pid, colorKey, size) {
     return (ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[s] && ALL_RETAIL_STOCK[s][pid] &&
             ALL_RETAIL_STOCK[s][pid][colorKey] && ALL_RETAIL_STOCK[s][pid][colorKey][size]) || 0;
@@ -1916,68 +1915,25 @@ function palRenderPlan() {
     return (inv[pid] && inv[pid][colorKey] && inv[pid][colorKey][size]) || 0;
   }
 
-  // Build critical list: sizes where Palladium = 0
-  var critical = []; // {pid, colorKey, size, retailTotal}
-  Object.keys(inv).forEach(function(pid) {
-    Object.keys(inv[pid]).forEach(function(colorKey) {
-      Object.keys(inv[pid][colorKey]).forEach(function(size) {
-        var pq = palQty(pid, colorKey, size);
-        var rt = RETAIL.reduce(function(s,store){ return s + parseInt(retailQty(store,pid,colorKey,size)||0); }, 0);
-        if (pq === 0) critical.push({ pid:pid, colorKey:colorKey, size:size, palQty:0, retailTotal:rt });
-      });
-    });
-  });
-
   var html = '<div style="font-size:.82rem;font-weight:700;color:#555;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between">'
     + '<span>📊 Purchase Planning</span>'
-    + '<span style="font-size:.75rem;color:#aaa;font-weight:400">Pal = Palladium stock · Net = all stores</span>'
+    + '<span style="font-size:.75rem;color:#aaa;font-weight:400">Pal / Net (all stores)</span>'
     + '</div>';
 
-  // Critical section
-  if (critical.length) {
-    // Group critical by pid
-    var cByPid = {}, cOrder = [];
-    critical.forEach(function(c) {
-      if (!cByPid[c.pid]) { cByPid[c.pid] = []; cOrder.push(c.pid); }
-      cByPid[c.pid].push(c);
-    });
-    html += '<div class="plan-section">'
-      + '<div class="plan-section-hd">🔴 Palladium Out of Stock — ' + critical.length + ' size' + (critical.length>1?'s':'') + ' need purchasing</div>';
-    cOrder.forEach(function(pid) {
-      var rows = cByPid[pid];
-      html += '<div class="plan-product">'
-        + '<div class="plan-product-hd"><span style="font-weight:700;font-family:monospace">' + pid + '</span>'
-        + '<span style="font-size:.72rem;opacity:.6">' + rows.length + ' size' + (rows.length>1?'s':'') + ' out</span></div>'
-        + '<div style="padding:8px 12px;display:flex;flex-wrap:wrap;gap:6px">';
-      rows.forEach(function(c) {
-        var cn = c.colorKey.replace(/^Color\s*/i,'');
-        var netBg = c.retailTotal > 0 ? 'background:#fffbeb;color:#92400e' : 'background:#fee2e2;color:#991b1b';
-        html += '<div style="border:2px solid #fca5a5;border-radius:8px;padding:5px 10px;font-size:.82rem;text-align:center">'
-          + '<div style="font-weight:700;color:#1a1a2e">Clr ' + cn + ' / Sz ' + c.size + '</div>'
-          + '<div style="font-size:.72rem;margin-top:2px"><span style="' + netBg + ';padding:1px 6px;border-radius:6px;font-weight:700">Net: ' + c.retailTotal + '</span></div>'
-          + '</div>';
-      });
-      html += '</div></div>';
-    });
-    html += '</div>';
-  } else {
-    html += '<div style="background:#dcfce7;border-radius:10px;padding:12px 14px;color:#15803d;font-weight:600;font-size:.88rem;margin-bottom:14px">✅ Palladium has stock in all sizes</div>';
-  }
-
-  // Full stock overview per product
-  html += '<div class="plan-section"><div class="plan-section-hd">📦 Full Stock Overview — Pal / Network total</div>';
   STOCK_DATA.groups.forEach(function(g) {
     g.products.forEach(function(pid) {
       var prodData = inv[pid]; if (!prodData) return;
-      // Collect all sizes across all colors
       var allSizes = [];
       Object.keys(prodData).forEach(function(ck) { Object.keys(prodData[ck]).forEach(function(sz){ if(allSizes.indexOf(sz)===-1) allSizes.push(sz); }); });
       allSizes.sort(function(a,b){ return parseFloat(a)-parseFloat(b); });
       var colors = Object.keys(prodData);
 
       html += '<div class="plan-product">'
-        + '<div class="plan-product-hd"><span style="font-weight:700;font-family:monospace">' + pid + '</span>'
-        + '<span style="font-size:.72rem;opacity:.6">' + g.label + '</span></div>'
+        + '<div class="plan-product-hd">'
+        + '<span style="font-weight:700;font-family:monospace">' + pid + '</span>'
+        + '<span style="font-size:.72rem;opacity:.6;margin-left:8px">' + g.label + '</span>'
+        + '<button onclick="palPrintProduct(\'' + palEsc(pid) + '\')" style="margin-left:auto;background:rgba(255,255,255,.18);border:none;color:#fff;padding:4px 11px;border-radius:6px;font-size:.75rem;font-weight:700;cursor:pointer">🖨 Print</button>'
+        + '</div>'
         + '<div class="plan-grid-wrap"><table class="plan-grid"><thead><tr>'
         + '<th class="plan-th plan-th-label">Color</th>'
         + allSizes.map(function(sz){ return '<th class="plan-th">' + sz + '</th>'; }).join('')
@@ -2007,9 +1963,72 @@ function palRenderPlan() {
       html += '</tbody></table></div></div>';
     });
   });
-  html += '</div>';
 
   el.innerHTML = html;
+}
+
+function palPrintProduct(pid) {
+  var inv = STOCK_DATA && STOCK_DATA.inventory; if (!inv || !inv[pid]) return;
+  var RETAIL = ['Bicasso 1','Bicasso 2','Bicasso Nana'];
+  var STORE_SHORT = ['B1','B2','BN'];
+  var prodData = inv[pid];
+  var catLabel = '';
+  (STOCK_DATA.groups || []).forEach(function(g){ if(g.products.indexOf(pid)!==-1) catLabel=g.label; });
+
+  var allSizes = [];
+  Object.keys(prodData).forEach(function(ck){ Object.keys(prodData[ck]).forEach(function(sz){ if(allSizes.indexOf(sz)===-1) allSizes.push(sz); }); });
+  allSizes.sort(function(a,b){ return parseFloat(a)-parseFloat(b); });
+
+  function rQty(s, ck, sz) {
+    return (ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[s] && ALL_RETAIL_STOCK[s][pid] &&
+            ALL_RETAIL_STOCK[s][pid][ck] && ALL_RETAIL_STOCK[s][pid][ck][sz]) || 0;
+  }
+
+  var thead = '<tr style="background:#1a1a2e">'
+    + '<th style="padding:8px 12px;text-align:left;color:#fff;font-size:.78rem">Color</th>'
+    + allSizes.map(function(sz){ return '<th style="padding:8px 8px;text-align:center;color:#fff;font-size:.78rem;min-width:46px">'+sz+'</th>'; }).join('')
+    + '</tr>';
+
+  var tbody = '';
+  Object.keys(prodData).forEach(function(colorKey) {
+    var cn = colorKey.replace(/^Color\s*/i,'');
+    // Palladium row
+    tbody += '<tr style="background:#f8fafc"><td style="padding:6px 12px;font-size:.82rem;font-weight:700;color:#1a1a2e;border-bottom:1px solid #e2e8f0">Clr '+cn+' <span style="font-weight:400;color:#888;font-size:.75rem">Pal</span></td>';
+    allSizes.forEach(function(sz) {
+      var exists = prodData[colorKey] && prodData[colorKey][sz] !== undefined;
+      var pq = exists ? (prodData[colorKey][sz] || 0) : null;
+      var bg = pq === null ? '' : pq === 0 ? 'background:#fee2e2;color:#991b1b' : pq <= 3 ? 'background:#fef9c3;color:#92400e' : 'background:#dcfce7;color:#15803d';
+      tbody += '<td style="padding:6px 4px;text-align:center;border-bottom:1px solid #e2e8f0">'
+        + (pq === null ? '<span style="color:#ddd">—</span>' : '<span style="'+bg+';padding:2px 6px;border-radius:5px;font-size:.82rem;font-weight:700">'+pq+'</span>')
+        + '</td>';
+    });
+    tbody += '</tr>';
+    // Retail stores rows
+    RETAIL.forEach(function(store, si) {
+      tbody += '<tr><td style="padding:4px 12px 4px 22px;font-size:.75rem;color:#888;border-bottom:1px solid #f0f2f5">'+STORE_SHORT[si]+'</td>';
+      allSizes.forEach(function(sz) {
+        var exists = prodData[colorKey] && prodData[colorKey][sz] !== undefined;
+        var sq = exists ? rQty(store, colorKey, sz) : null;
+        tbody += '<td style="padding:4px;text-align:center;border-bottom:1px solid #f0f2f5;font-size:.78rem;color:#555">'+(sq===null?'<span style="color:#ddd">—</span>':sq)+'</td>';
+      });
+      tbody += '</tr>';
+    });
+  });
+
+  var now = new Date();
+  var dateStr = now.getDate()+'/'+(now.getMonth()+1)+'/'+now.getFullYear();
+
+  document.getElementById('pdf-overlay-inner').innerHTML =
+    '<div style="border-bottom:3px solid #1a1a2e;padding-bottom:12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end">'
+    +'<div><div style="font-size:1.3rem;font-weight:900;color:#1a1a2e">Burmelin</div>'
+    +'<div style="font-size:.82rem;color:#555">Stock Overview — Purchase Planning</div></div>'
+    +'<div style="font-size:.82rem;color:#888">'+dateStr+'</div></div>'
+    +'<div style="margin-bottom:14px"><span style="font-size:1.1rem;font-weight:800;color:#1a1a2e;font-family:monospace">'+pid+'</span>'
+    +(catLabel?' <span style="font-size:.82rem;color:#888;margin-left:8px">'+catLabel+'</span>':'')+'</div>'
+    +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.83rem">'+thead+'<tbody>'+tbody+'</tbody></table></div>'
+    +'<div style="margin-top:14px;font-size:.72rem;color:#aaa">Pal = Palladium warehouse · B1/B2/BN = Bicasso stores</div>';
+  document.getElementById('pdf-overlay').style.display='block';
+  window.scrollTo(0,0);
 }
 
 // ── RETAIL REORDER TAB ────────────────────────────────────────────
@@ -2024,44 +2043,19 @@ function renderReorderTab() {
     return;
   }
 
-  var outRows = [], lowRows = [];
+  // All rows needing attention: out of stock (0) or low (≤1)
+  var needRows = [];
   Object.keys(inv).forEach(function(pid) {
     Object.keys(inv[pid]).forEach(function(colorKey) {
       var cn = colorKey.replace(/^Color\s*/i,'');
       Object.keys(inv[pid][colorKey]).forEach(function(size) {
         var qty = parseInt(inv[pid][colorKey][size]) || 0;
-        var row = { pid:pid, cn:cn, size:size, qty:qty };
-        if (qty === 0) outRows.push(row);
-        else if (qty <= 2) lowRows.push(row);
+        if (qty <= 1) needRows.push({ pid:pid, colorKey:colorKey, cn:cn, size:size, qty:qty });
       });
     });
   });
 
-  function buildGroup(rows, label, hdClass) {
-    if (!rows.length) return '';
-    // Group by product
-    var byPid = {}, pOrder = [];
-    rows.forEach(function(r) {
-      if (!byPid[r.pid]) { byPid[r.pid] = []; pOrder.push(r.pid); }
-      byPid[r.pid].push(r);
-    });
-    var h = '<div class="reorder-section"><div class="reorder-hd ' + hdClass + '">'
-      + label + ' <span style="margin-left:4px;opacity:.7">(' + rows.length + ')</span></div>'
-      + '<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 10px 10px;overflow:hidden;background:#fff">';
-    pOrder.forEach(function(pid) {
-      h += '<div style="background:#f8fafc;padding:6px 12px;font-size:.78rem;font-weight:700;color:#1a1a2e;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #e2e8f0">' + pid + '</div>';
-      byPid[pid].forEach(function(r) {
-        h += '<div class="reorder-row">'
-          + '<span style="flex:1;font-size:.85rem;color:#555">Color <strong>' + r.cn + '</strong> · Size <strong>' + r.size + '</strong></span>'
-          + '<span class="rs-badge ' + (r.qty===0?'rs-out':'rs-low') + '">' + (r.qty===0?'Out of stock':r.qty+' left') + '</span>'
-          + '</div>';
-      });
-    });
-    h += '</div></div>';
-    return h;
-  }
-
-  if (!outRows.length && !lowRows.length) {
+  if (!needRows.length) {
     el.innerHTML = '<div style="text-align:center;padding:40px 20px">'
       + '<div style="font-size:2rem;margin-bottom:10px">✅</div>'
       + '<div style="font-weight:700;color:#15803d;margin-bottom:6px">All good!</div>'
@@ -2070,13 +2064,98 @@ function renderReorderTab() {
     return;
   }
 
+  // Group by product
+  var byPid = {}, pOrder = [];
+  needRows.forEach(function(r) {
+    if (!byPid[r.pid]) { byPid[r.pid] = []; pOrder.push(r.pid); }
+    byPid[r.pid].push(r);
+  });
+
   var html = '<div style="font-size:.8rem;color:#888;margin-bottom:12px;padding:8px 10px;background:#f0f2f5;border-radius:8px">'
-    + '📋 Items to order from Palladium — use the <strong>Order</strong> tab to place your order.'
-    + '</div>'
-    + buildGroup(outRows, '🔴 Out of Stock', 'reorder-hd-out')
-    + buildGroup(lowRows, '🟡 Low Stock (≤ 2)', 'reorder-hd-low');
+    + '📋 Items at 0 or 1 piece — tap <strong>Order</strong> to auto-fill your Palladium order with available sizes.'
+    + '</div>';
+
+  pOrder.forEach(function(pid) {
+    var rows = byPid[pid];
+    var safeId = pid.replace(/[^a-zA-Z0-9]/g,'_');
+    html += '<div class="reorder-section">'
+      + '<div style="display:flex;align-items:center;background:#1a1a2e;padding:8px 12px;border-radius:10px 10px 0 0;gap:8px">'
+      + '<span style="flex:1;font-weight:700;font-family:monospace;color:#fff;font-size:.9rem">' + pid + '</span>'
+      + '<span style="font-size:.72rem;color:rgba(255,255,255,.5)">' + rows.length + ' size' + (rows.length>1?'s':'') + '</span>'
+      + '<button onclick="reorderByProduct(\'' + palEsc(pid) + '\')" style="background:#4f46e5;border:none;color:#fff;padding:5px 12px;border-radius:6px;font-size:.78rem;font-weight:700;cursor:pointer">🛒 Order</button>'
+      + '</div>'
+      + '<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 10px 10px;overflow:hidden;background:#fff">';
+    rows.forEach(function(r) {
+      var badge = r.qty === 0 ? 'rs-out' : 'rs-low';
+      var label = r.qty === 0 ? 'Out' : r.qty + ' left';
+      html += '<div class="reorder-row">'
+        + '<span style="flex:1;font-size:.85rem;color:#555">Color <strong>' + r.cn + '</strong> · Size <strong>' + r.size + '</strong></span>'
+        + '<span class="rs-badge ' + badge + '">' + label + '</span>'
+        + '</div>';
+    });
+    html += '</div></div>';
+  });
 
   el.innerHTML = html;
+}
+
+function reorderByProduct(pid) {
+  var inv = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name];
+  if (!inv || !inv[pid]) return;
+
+  // Collect all sizes ≤1 for this product
+  var toOrder = [];
+  Object.keys(inv[pid]).forEach(function(colorKey) {
+    Object.keys(inv[pid][colorKey]).forEach(function(size) {
+      var qty = parseInt(inv[pid][colorKey][size]) || 0;
+      if (qty <= 1) toOrder.push({ colorKey:colorKey, size:size, storeQty:qty });
+    });
+  });
+  if (!toOrder.length) return;
+
+  // Check Palladium availability — use INVENTORY if loaded, else load it
+  if (!INVENTORY_LOADED) {
+    showToast('Checking Palladium stock…');
+    google.script.run
+      .withSuccessHandler(function(r) {
+        if (r && r.success) {
+          INVENTORY = r.inventory; GROUPS = r.groups; INVENTORY_LOADED = true;
+          doReorderByProduct(pid, toOrder);
+        } else { showToast('Could not load Palladium stock'); }
+      })
+      .withFailureHandler(function() { showToast('Connection error — try again'); })
+      .getInventory();
+  } else {
+    doReorderByProduct(pid, toOrder);
+  }
+}
+
+function doReorderByProduct(pid, toOrder) {
+  var added = 0, notAvail = 0;
+  toOrder.forEach(function(item) {
+    var lc = item.colorKey.replace(/^Color\s*/i,'');
+    var palStock = (INVENTORY[pid] && INVENTORY[pid][item.colorKey] && INVENTORY[pid][item.colorKey][item.size]) || 0;
+    if (palStock > 0) {
+      var existing = cart.find(function(c){ return c.product===pid && c.color===item.colorKey && c.size===item.size; });
+      if (existing) {
+        existing.qty = Math.min(existing.qty + 1, palStock);
+      } else {
+        cart.push({ id:nextId++, product:pid, color:item.colorKey, size:item.size, qty:1, lookupType:'main', lp:pid, lc:lc, ls:item.size });
+      }
+      added++;
+    } else {
+      notAvail++;
+    }
+  });
+  renderCart();
+  if (added > 0) {
+    showPanel('order');
+    var msg = '✅ ' + added + ' size' + (added>1?'s':'') + ' added to order';
+    if (notAvail) msg += ' · ' + notAvail + ' not at Palladium';
+    showToast(msg);
+  } else {
+    showToast('❌ None of these sizes are available at Palladium right now');
+  }
 }
 
 // ── PDF ───────────────────────────────────────────────────────────
