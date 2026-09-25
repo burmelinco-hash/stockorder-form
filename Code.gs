@@ -1161,7 +1161,8 @@ function generateMasterSheet(password, targets) {
     plan.autoResizeColumns(1, 20);
 
     var dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
-    return { success: true, products: productOrder.length, updated: dateStr };
+    var targetCount = Object.keys(targets).length;
+    return { success: true, products: productOrder.length, updated: dateStr, targetCount: targetCount, targetsReceived: JSON.stringify(targets).substring(0, 200) };
 
   } catch(e) { return { success: false, error: e.toString() }; }
 }
