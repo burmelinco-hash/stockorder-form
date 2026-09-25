@@ -1907,15 +1907,15 @@ function palShowPlan() {
 function palGenerateMasterSheet() {
   var btn = document.getElementById('btn-gen-master');
   if (btn) { btn.textContent = '⏳ Saving…'; btn.disabled = true; }
-  // Collect all targets from localStorage
+  // Read directly from DOM inputs (catches values not yet saved via onchange)
   var allTargets = {};
-  var inv = STOCK_DATA && STOCK_DATA.inventory;
-  if (inv) {
-    Object.keys(inv).forEach(function(pid) {
-      var t = palGetTargets(pid);
-      if (Object.keys(t).length) allTargets[pid] = t;
-    });
-  }
+  document.querySelectorAll('input[data-pid][data-sz]').forEach(function(inp) {
+    var pid = inp.getAttribute('data-pid');
+    var sz  = inp.getAttribute('data-sz');
+    var val = parseInt(inp.value) || 0;
+    if (!allTargets[pid]) allTargets[pid] = {};
+    allTargets[pid][sz] = val;
+  });
   google.script.run
     .withSuccessHandler(function(r) {
       if (btn) { btn.textContent = '📋 Save to Sheet'; btn.disabled = false; }
