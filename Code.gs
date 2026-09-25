@@ -74,7 +74,7 @@ function handleApi(action, params, body) {
     case 'updateRetailStockQty': out = updateRetailStockQty(body.storeName, body.password, body.productId, body.colorNum, body.size, body.newQty); break;
     case 'addRetailStockItem':   out = addRetailStockItem(body.storeName, body.password, body.productId, body.category, body.colorNum, body.size, body.qty); break;
     case 'addRetailStockItems':    out = addRetailStockItems(body.storeName, body.password, body.items); break;
-    case 'generateMasterSheet':  out = generateMasterSheet(body.password); break;
+    case 'generateMasterSheet':    out = generateMasterSheet(body.password); break;
     default:                     out = { success: false, error: 'Unknown action: ' + action };
   }
   return jsonOut(out);
@@ -967,101 +967,202 @@ function buildInvoiceHtml(order) {
   + '</div></body></html>';
 }
 
-// ─── GENERATE MASTER SHEET ───────────────────────────────────────
-// Creates/refreshes a "Master" tab with full stock overview:
-// Product ID | Color | Size | Palladium | Bicasso 1 | Bicasso 2 | Bicasso Nana | Total | Status
-function generateMasterSheet(password) {
+// ─── GENERATE MASTER SHEET ────────────────────────────────────────────────────
+// Pivot layout: one section per product code, sizes as columns, colors as rows,
+// quantities = all stores combined (Palladium + Bicasso 1 + Bicasso 2 + Bicasso Nana)
+function generateMasterSheet(password, targets) {
   if (password !== EMPLOYEE_PASS) return { success: false, error: 'Wrong password.' };
+  targets = targets || {};
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var MASTER_NAME = 'Master';
-    var master = ss.getSheetByName(MASTER_NAME);
-    if (!master) {
-      master = ss.insertSheet(MASTER_NAME);
-    } else {
-      master.clearContents();
-      master.clearFormats();
-    }
+    var master = ss.getSheetByName('Master');
+    if (!master) { master = ss.insertSheet('Master'); } else { master.clearContents(); master.clearFormats(); }
 
-    var RETAIL_STORES = ['Bicasso 1', 'Bicasso 2', 'Bicasso Nana'];
-    var headers = ['Product ID', 'Color', 'Size', 'Palladium', 'Bicasso 1', 'Bicasso 2', 'Bicasso Nana', 'Total Network', 'Status'];
-    master.getRange(1, 1, 1, headers.length).setValues([headers])
-      .setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
-    master.setFrozenRows(1);
+    var STORES = ['Bicasso 1', 'Bicasso 2', 'Bicasso Nana'];
 
-    // Load wholesale (Palladium) stock from Size Chart
-    var wholesaleSheet = null;
+    // Load wholesale stock
+    var wsSheet = null;
     var sheets = ss.getSheets();
     for (var i = 0; i < sheets.length; i++) {
-      if (sheets[i].getName().trim() === INVENTORY_SHEET_NAME.trim()) { wholesaleSheet = sheets[i]; break; }
+      if (sheets[i].getName().trim() === INVENTORY_SHEET_NAME.trim()) { wsSheet = sheets[i]; break; }
     }
-    if (!wholesaleSheet) return { success: false, error: 'Wholesale sheet not found.' };
+    if (!wsSheet) return { success: false, error: 'Size Chart sheet not found.' };
 
-    var wData = wholesaleSheet.getDataRange().getValues();
+    var wData = wsSheet.getDataRange().getValues();
     var wStart = 1;
     for (var h = 0; h < wData.length; h++) {
       if (String(wData[h][1]).trim().toLowerCase() === 'product id') { wStart = h + 1; break; }
     }
 
-    // Load each retail store stock into a lookup map
+    var palMap = {}, productOrder = [], colorOrder = {}, sizeOrder = {}, categoryMap = {};
+    for (var r = wStart; r < wData.length; r++) {
+      var row = wData[r];
+      var pid = String(row[1]).trim(), cat = String(row[2]).trim();
+      var cn = String(row[3]).trim(), sz = String(row[4]).trim(), qty = parseInt(row[5]) || 0;
+      if (!pid || !cn || !sz) continue;
+      if (!palMap[pid]) { palMap[pid] = {}; productOrder.push(pid); colorOrder[pid] = []; sizeOrder[pid] = []; categoryMap[pid] = cat; }
+      if (!palMap[pid][cn]) { palMap[pid][cn] = {}; colorOrder[pid].push(cn); }
+      if (sizeOrder[pid].indexOf(sz) === -1) sizeOrder[pid].push(sz);
+      palMap[pid][cn][sz] = qty;
+    }
+    productOrder.forEach(function(p) { sizeOrder[p].sort(function(a,b){ return parseFloat(a)-parseFloat(b); }); });
+
+    // Load retail stock
     var retailMap = {};
-    RETAIL_STORES.forEach(function(storeName) {
-      retailMap[storeName] = {};
-      var sheet = ss.getSheetByName(storeName + ' Stock');
-      if (!sheet) return;
-      var data = sheet.getDataRange().getValues();
-      var start = 1;
-      for (var h = 0; h < data.length; h++) {
-        if (String(data[h][1]).trim().toLowerCase() === 'product id') { start = h + 1; break; }
+    STORES.forEach(function(s) {
+      retailMap[s] = {};
+      var sh = ss.getSheetByName(s + ' Stock');
+      if (!sh) return;
+      var d = sh.getDataRange().getValues();
+      var st = 1;
+      for (var h2 = 0; h2 < d.length; h2++) {
+        if (String(d[h2][1]).trim().toLowerCase() === 'product id') { st = h2 + 1; break; }
       }
-      for (var r = start; r < data.length; r++) {
-        var pid = String(data[r][1]).trim();
-        var cn  = String(data[r][3]).trim();
-        var sz  = String(data[r][4]).trim();
-        var qty = parseInt(data[r][5]) || 0;
-        if (!pid || !cn || !sz) continue;
-        var key = pid + '||' + cn + '||' + sz;
-        retailMap[storeName][key] = qty;
+      for (var r2 = st; r2 < d.length; r2++) {
+        var pid2 = String(d[r2][1]).trim(), cn2 = String(d[r2][3]).trim().replace(/^Color\s*/i,'');
+        var sz2 = String(d[r2][4]).trim(), qty2 = parseInt(d[r2][5]) || 0;
+        if (!pid2 || !cn2 || !sz2) continue;
+        retailMap[s][pid2+'||'+cn2+'||'+sz2] = (retailMap[s][pid2+'||'+cn2+'||'+sz2] || 0) + qty2;
       }
     });
 
-    // Build data rows from wholesale reference
-    var rows = [];
-    var bgColors = [];
-    for (var r = wStart; r < wData.length; r++) {
-      var row = wData[r];
-      var pid    = String(row[1]).trim();
-      var cn     = String(row[3]).trim();
-      var sz     = String(row[4]).trim();
-      var palQty = parseInt(row[5]) || 0;
-      if (!pid || !cn || !sz) continue;
+    // Write each product section
+    var currentRow = 1;
+    productOrder.forEach(function(pid) {
+      var sizes = sizeOrder[pid];
+      var colors = colorOrder[pid];
+      var numCols = sizes.length + 2; // Color + sizes + Total
 
-      var key = pid + '||' + cn + '||' + sz;
-      var b1  = retailMap['Bicasso 1'][key]    || 0;
-      var b2  = retailMap['Bicasso 2'][key]    || 0;
-      var bn  = retailMap['Bicasso Nana'][key] || 0;
-      var total = palQty + b1 + b2 + bn;
-      var status = palQty === 0 ? 'Order Now' : palQty <= 3 ? 'Low' : 'OK';
+      // Product header: [T9027  LINEN SHIRTS, 48, 50, 52, ..., Total]
+      var hdrRow = [pid + (categoryMap[pid] ? '  ' + categoryMap[pid] : '')];
+      sizes.forEach(function(sz) { hdrRow.push(sz); });
+      hdrRow.push('Total');
+      master.getRange(currentRow, 1, 1, numCols).setValues([hdrRow])
+        .setBackground('#1a5c2f').setFontColor('#f5d020').setFontWeight('bold');
+      currentRow++;
 
-      rows.push([pid, cn, sz, palQty, b1, b2, bn, total, status]);
-      bgColors.push(status === 'Order Now' ? '#fee2e2' : status === 'Low' ? '#fef9c3' : '#f0fdf4');
-    }
+      // Pre-compute cell values for column totals
+      var colTotals = {}; // sz -> total across all colors
+      sizes.forEach(function(sz) { colTotals[sz] = 0; });
+      var grandTotal = 0;
 
-    if (rows.length) {
-      master.getRange(2, 1, rows.length, headers.length).setValues(rows);
-      // Color-code the Status and Palladium columns
-      for (var i = 0; i < rows.length; i++) {
-        var bg = bgColors[i];
-        master.getRange(i + 2, 9).setBackground(bg).setFontWeight('bold');
-        master.getRange(i + 2, 4).setBackground(bg);
-      }
-    }
+      // One row per color
+      colors.forEach(function(cn, ci) {
+        var dataRow = ['Color ' + cn];
+        var rowTotal = 0;
+        sizes.forEach(function(sz) {
+          var pal = (palMap[pid][cn] && palMap[pid][cn][sz] !== undefined) ? (parseInt(palMap[pid][cn][sz]) || 0) : 0;
+          var retail = 0;
+          STORES.forEach(function(s) { retail += (retailMap[s][pid+'||'+cn+'||'+sz] || 0); });
+          var cell = pal + retail;
+          dataRow.push(cell);
+          rowTotal += cell;
+          colTotals[sz] += cell;
+        });
+        dataRow.push(rowTotal);
+        grandTotal += rowTotal;
+        var bg = ci % 2 === 0 ? '#fff9db' : '#ffffff';
+        master.getRange(currentRow, 1, 1, numCols).setValues([dataRow]).setBackground(bg);
+        master.getRange(currentRow, 1).setFontWeight('bold');
+        // Row total cell styling
+        master.getRange(currentRow, numCols).setBackground('#e0e7ff').setFontColor('#3730a3').setFontWeight('bold');
+        currentRow++;
+      });
 
-    master.autoResizeColumns(1, headers.length);
+      // Column totals row
+      var totRow = ['Total'];
+      sizes.forEach(function(sz) { totRow.push(colTotals[sz]); });
+      totRow.push(grandTotal);
+      master.getRange(currentRow, 1, 1, numCols).setValues([totRow])
+        .setBackground('#e0e7ff').setFontColor('#3730a3').setFontWeight('bold');
+      // Grand total corner
+      master.getRange(currentRow, numCols).setBackground('#1a1a2e').setFontColor('#c7d2fe');
+      currentRow++;
+
+      currentRow++; // blank separator between products
+    });
+
+    master.autoResizeColumns(1, 20);
+
+    // ── Order Plan sheet ──────────────────────────────────────────
+    var plan = ss.getSheetByName('Order Plan');
+    if (!plan) { plan = ss.insertSheet('Order Plan'); } else { plan.clearContents(); plan.clearFormats(); }
+
+    var planRow = 1;
+    productOrder.forEach(function(pid) {
+      var pidTargets = targets[pid] || {};
+      var sizes = sizeOrder[pid];
+      var colors = colorOrder[pid];
+      var numCols = sizes.length + 2;
+      var hasAnyTarget = sizes.some(function(sz) { return pidTargets[sz] > 0; });
+
+      // Product header
+      var hdrRow = [pid + (categoryMap[pid] ? '  ' + categoryMap[pid] : '')];
+      sizes.forEach(function(sz) { hdrRow.push(sz); });
+      hdrRow.push('Total');
+      plan.getRange(planRow, 1, 1, numCols).setValues([hdrRow])
+        .setBackground('#1a5c2f').setFontColor('#f5d020').setFontWeight('bold');
+      planRow++;
+
+      // Target row
+      var targetRow = ['🎯 Target'];
+      sizes.forEach(function(sz) { targetRow.push(pidTargets[sz] || 0); });
+      targetRow.push('');
+      plan.getRange(planRow, 1, 1, numCols).setValues([targetRow])
+        .setBackground('#fef3c7').setFontColor('#92400e').setFontWeight('bold');
+      planRow++;
+
+      // Color rows — show how many to order per size
+      var colOrderTotals = {};
+      sizes.forEach(function(sz) { colOrderTotals[sz] = 0; });
+      var grandOrderTotal = 0;
+
+      colors.forEach(function(cn, ci) {
+        var dataRow = ['Color ' + cn];
+        var rowTotal = 0;
+        sizes.forEach(function(sz) {
+          var pal = (palMap[pid][cn] && palMap[pid][cn][sz] !== undefined) ? (parseInt(palMap[pid][cn][sz]) || 0) : 0;
+          var retail = 0;
+          STORES.forEach(function(s) { retail += (retailMap[s][pid+'||'+cn+'||'+sz] || 0); });
+          var current = pal + retail;
+          var tgt = pidTargets[sz] || 0;
+          var toOrder = Math.max(0, tgt - current);
+          dataRow.push(toOrder);
+          rowTotal += toOrder;
+          colOrderTotals[sz] += toOrder;
+        });
+        dataRow.push(rowTotal);
+        grandOrderTotal += rowTotal;
+        var bg = ci % 2 === 0 ? '#fff9db' : '#ffffff';
+        plan.getRange(planRow, 1, 1, numCols).setValues([dataRow]).setBackground(bg);
+        plan.getRange(planRow, 1).setFontWeight('bold');
+        // Highlight cells where order is needed
+        sizes.forEach(function(sz, si) {
+          if (dataRow[si + 1] > 0) {
+            plan.getRange(planRow, si + 2).setBackground('#fee2e2').setFontColor('#b91c1c').setFontWeight('bold');
+          }
+        });
+        if (rowTotal > 0) plan.getRange(planRow, numCols).setBackground('#fca5a5').setFontColor('#7f1d1d').setFontWeight('bold');
+        planRow++;
+      });
+
+      // Totals row
+      var totRow = ['Total to Order'];
+      sizes.forEach(function(sz) { totRow.push(colOrderTotals[sz]); });
+      totRow.push(grandOrderTotal);
+      plan.getRange(planRow, 1, 1, numCols).setValues([totRow])
+        .setBackground('#1a1a2e').setFontColor('#ffffff').setFontWeight('bold');
+      if (grandOrderTotal > 0) plan.getRange(planRow, numCols).setBackground('#dc2626').setFontColor('#ffffff');
+      planRow++;
+
+      planRow++; // blank separator
+    });
+
+    plan.autoResizeColumns(1, 20);
+
     var dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
-    return { success: true, rows: rows.length, updated: dateStr };
+    return { success: true, products: productOrder.length, updated: dateStr };
 
-  } catch(err) {
-    return { success: false, error: err.toString() };
-  }
+  } catch(e) { return { success: false, error: e.toString() }; }
 }
+

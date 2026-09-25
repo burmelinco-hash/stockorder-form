@@ -437,7 +437,7 @@ var API_URL = 'https://script.google.com/macros/s/AKfycby-5YfvPpePbg1ni36sL5AI-D
 (function(){
   if (typeof google !== 'undefined' && google.script && google.script.run) return;
   var GET_ACTIONS = { getBusinessName:1, getInventory:1, getAllRetailStock:1 };
-  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'], addRetailStockItem:['storeName','password','productId','category','colorNum','size','qty'], addRetailStockItems:['storeName','password','items'], generateMasterSheet:['password'] };
+  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'], addRetailStockItem:['storeName','password','productId','category','colorNum','size','qty'], addRetailStockItems:['storeName','password','items'], generateMasterSheet:['password','targets'] };
   function makeRunner(){ var onOk=null,onErr=null; var runner={ withSuccessHandler:function(cb){onOk=cb;return runner;}, withFailureHandler:function(cb){onErr=cb;return runner;} }; function attach(name){ runner[name]=function(){ var args=arguments; function attempt(tries){ var ctrl=new AbortController(); var tid=setTimeout(function(){ctrl.abort();},20000); var req; if(GET_ACTIONS[name]){ req=fetch(API_URL+'?action='+encodeURIComponent(name),{signal:ctrl.signal}); }else{ var payload={action:name}; (POST_ARGS[name]||[]).forEach(function(k,i){payload[k]=args[i];}); req=fetch(API_URL,{method:'POST',body:JSON.stringify(payload),signal:ctrl.signal}); } req.then(function(r){clearTimeout(tid);if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(res){if(onOk)onOk(res);}).catch(function(err){ clearTimeout(tid); if(tries>0){ setTimeout(function(){attempt(tries-1);},1500); }else{ if(onErr)onErr(err); } }); } attempt(1); }; } Object.keys(GET_ACTIONS).forEach(attach); Object.keys(POST_ARGS).forEach(attach); return runner; }
   window.google=window.google||{}; window.google.script=window.google.script||{}; Object.defineProperty(window.google.script,'run',{get:makeRunner});
 })();
@@ -1569,13 +1569,15 @@ function palMarkDone(orderId) {
         var b=document.getElementById('pob-'+orderId); if(b) b.classList.add('open');
         if(r.warnings&&r.warnings.length){ var m=document.getElementById('pmsg-'+orderId); if(m){m.style.color='#92400e';m.textContent='⚠ '+r.warnings.join('; ');} }
       } else {
-        if(btn){ btn.disabled=false; btn.textContent='✔ Done'; }
+        if(btn){ btn.disabled=false; btn.textContent=isStore?'✔ Send to Store':'✔ Done'; }
         if(msg){ msg.style.color='#b91c1c'; msg.textContent='❌ '+r.error; }
       }
     })
     .withFailureHandler(function(){
-      if(btn){ btn.disabled=false; btn.textContent='✔ Done'; }
-      if(msg){ msg.style.color='#b91c1c'; msg.textContent='❌ Connection error.'; }
+      // Keep button disabled — server may have already processed it.
+      // User must refresh orders to confirm, then tap again only if still Pending.
+      if(btn){ btn.disabled=true; btn.textContent='⚠ Check'; btn.style.background='#f59e0b'; btn.onclick=function(){ palLoadOrders(); }; }
+      if(msg){ msg.style.color='#b91c1c'; msg.textContent='❌ Connection lost — tap ⚠ Check to refresh and verify the order status before tapping Done again.'; }
     })
     .markDone(orderId,SESSION_STORE.pass);
 }
@@ -1902,6 +1904,31 @@ function palShowPlan() {
   palRenderPlan();
 }
 
+function palGenerateMasterSheet() {
+  var btn = document.getElementById('btn-gen-master');
+  if (btn) { btn.textContent = '⏳ Saving…'; btn.disabled = true; }
+  // Collect all targets from localStorage
+  var allTargets = {};
+  var inv = STOCK_DATA && STOCK_DATA.inventory;
+  if (inv) {
+    Object.keys(inv).forEach(function(pid) {
+      var t = palGetTargets(pid);
+      if (Object.keys(t).length) allTargets[pid] = t;
+    });
+  }
+  google.script.run
+    .withSuccessHandler(function(r) {
+      if (btn) { btn.textContent = '📋 Save to Sheet'; btn.disabled = false; }
+      if (r && r.success) showToast('✅ Saved — ' + r.products + ' products · ' + r.updated);
+      else showToast('❌ ' + (r && r.error || 'Error'));
+    })
+    .withFailureHandler(function() {
+      if (btn) { btn.textContent = '📋 Save to Sheet'; btn.disabled = false; }
+      showToast('❌ Connection error');
+    })
+    .generateMasterSheet(SESSION_STORE.pass, allTargets);
+}
+
 function palRenderPlan() {
   var el = document.getElementById('plan-content'); if (!el) return;
   var inv = STOCK_DATA && STOCK_DATA.inventory; if (!inv) return;
@@ -1918,7 +1945,7 @@ function palRenderPlan() {
   var html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px">'
     + '<div><div style="font-size:.88rem;font-weight:700;color:#1a1a2e">📊 Master Stock</div>'
     + '<div style="font-size:.72rem;color:#aaa;margin-top:1px">Pal / Net — row & column totals included</div></div>'
-    + '<button id="btn-gen-master" onclick="palGenerateMasterSheet()" style="background:#4f46e5;border:none;color:#fff;padding:8px 13px;border-radius:8px;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap">📋 Save to Sheet</button>'
+    + '<button id="btn-gen-master" onclick="palGenerateMasterSheet()" style="background:#1a5c2f;border:none;color:#f5d020;padding:8px 13px;border-radius:8px;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap">📋 Save to Sheet</button>'
     + '</div>';
 
   STOCK_DATA.groups.forEach(function(g) {
@@ -1996,28 +2023,43 @@ function palRenderPlan() {
       });
       // Grand total corner
       html += '<td class="plan-cell" style="background:#1a1a2e;border-left:2px solid #374151"><div class="plan-cell-inner"><span class="plan-pal" style="color:#c7d2fe">' + grandPal + '</span><span class="plan-net" style="color:rgba(199,210,254,.6)">/' + grandNet + '</span></div></td>';
-      html += '</tr></tbody></table></div></div>';
+      html += '</tr></tbody></table></div>';
+
+      // Order Plan target input row
+      var savedTargets = palGetTargets(pid);
+      html += '<div style="margin-top:6px;overflow-x:auto">'
+        + '<table class="plan-grid"><tbody><tr>'
+        + '<td class="plan-td-label" style="background:#fef3c7;color:#92400e;font-weight:700;font-size:.72rem;white-space:nowrap">🎯 Order Target</td>';
+      allSizes.forEach(function(sz) {
+        var val = savedTargets[sz] !== undefined ? savedTargets[sz] : '';
+        html += '<td class="plan-cell" style="background:#fef3c7;padding:2px">'
+          + '<input type="number" min="0" data-pid="' + pid + '" data-sz="' + sz + '"'
+          + ' value="' + val + '"'
+          + ' onchange="palSaveTarget(this)"'
+          + ' style="width:100%;border:1px solid #fbbf24;border-radius:4px;text-align:center;font-size:.78rem;padding:2px 0;background:#fffbeb;color:#92400e;font-weight:700">'
+          + '</td>';
+      });
+      html += '<td class="plan-cell" style="background:#fef3c7"></td></tr></tbody></table></div>';
+      html += '</div>'; // close plan-product
     });
   });
 
   el.innerHTML = html;
 }
 
-function palGenerateMasterSheet() {
-  var btn = document.getElementById('btn-gen-master');
-  if (btn) { btn.textContent = '⏳ Saving…'; btn.disabled = true; }
-  google.script.run
-    .withSuccessHandler(function(r) {
-      if (btn) { btn.textContent = '📋 Save to Sheet'; btn.disabled = false; }
-      if (r && r.success) showToast('✅ Master sheet updated — ' + r.rows + ' rows · ' + r.updated);
-      else showToast('❌ ' + (r && r.error || 'Error'));
-    })
-    .withFailureHandler(function() {
-      if (btn) { btn.textContent = '📋 Save to Sheet'; btn.disabled = false; }
-      showToast('❌ Connection error');
-    })
-    .generateMasterSheet(SESSION_STORE.pass);
+function palGetTargets(pid) {
+  try { return JSON.parse(localStorage.getItem('plan_targets_' + pid) || '{}'); } catch(e) { return {}; }
 }
+
+function palSaveTarget(input) {
+  var pid = input.getAttribute('data-pid');
+  var sz  = input.getAttribute('data-sz');
+  var val = parseInt(input.value) || 0;
+  var targets = palGetTargets(pid);
+  targets[sz] = val;
+  try { localStorage.setItem('plan_targets_' + pid, JSON.stringify(targets)); } catch(e) {}
+}
+
 
 function palPrintProduct(pid) {
   var inv = STOCK_DATA && STOCK_DATA.inventory; if (!inv || !inv[pid]) return;
