@@ -2166,7 +2166,7 @@ function renderReorderTab() {
   });
 
   var html = '<div style="font-size:.8rem;color:#888;margin-bottom:12px;padding:8px 10px;background:#f0f2f5;border-radius:8px">'
-    + '📋 Items at 0 or 1 piece — tap <strong>Order</strong> to auto-fill your Palladium order with available sizes.'
+    + '📋 Items below minimum (2 pcs) — tap <strong>Order</strong> to auto-fill ALL missing or low sizes from Palladium\'s full size range.'
     + '</div>';
 
   pOrder.forEach(function(pid) {
@@ -2181,7 +2181,7 @@ function renderReorderTab() {
       + '<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 10px 10px;overflow:hidden;background:#fff">';
     rows.forEach(function(r) {
       var badge = r.qty === 0 ? 'rs-out' : 'rs-low';
-      var label = r.qty === 0 ? 'Out' : r.qty + ' left';
+      var label = r.qty === 0 ? 'Out (0)' : r.qty + ' left (need ' + (2 - r.qty) + ' more)';
       html += '<div class="reorder-row">'
         + '<span style="flex:1;font-size:.85rem;color:#555">Color <strong>' + r.cn + '</strong> · Size <strong>' + r.size + '</strong></span>'
         + '<span class="rs-badge ' + badge + '">' + label + '</span>'
@@ -2194,61 +2194,69 @@ function renderReorderTab() {
 }
 
 function reorderByProduct(pid) {
-  var inv = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name];
-  if (!inv || !inv[pid]) return;
-
-  // Collect all sizes ≤1 for this product
-  var toOrder = [];
-  Object.keys(inv[pid]).forEach(function(colorKey) {
-    Object.keys(inv[pid][colorKey]).forEach(function(size) {
-      var qty = parseInt(inv[pid][colorKey][size]) || 0;
-      if (qty <= 1) toOrder.push({ colorKey:colorKey, size:size, storeQty:qty });
-    });
-  });
-  if (!toOrder.length) return;
-
-  // Check Palladium availability — use INVENTORY if loaded, else load it
+  // Always need Palladium inventory to know the full size/color matrix
   if (!INVENTORY_LOADED) {
     showToast('Checking Palladium stock…');
     google.script.run
       .withSuccessHandler(function(r) {
         if (r && r.success) {
           INVENTORY = r.inventory; GROUPS = r.groups; INVENTORY_LOADED = true;
-          doReorderByProduct(pid, toOrder);
+          doReorderByProduct(pid);
         } else { showToast('Could not load Palladium stock'); }
       })
       .withFailureHandler(function() { showToast('Connection error — try again'); })
       .getInventory();
   } else {
-    doReorderByProduct(pid, toOrder);
+    doReorderByProduct(pid);
   }
 }
 
-function doReorderByProduct(pid, toOrder) {
+function doReorderByProduct(pid) {
+  var MINIMUM = 2;
+  var storeInv = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name];
+  var palPid = INVENTORY && INVENTORY[pid];
+  if (!palPid) {
+    showToast('❌ ' + pid + ' not found in Palladium stock');
+    return;
+  }
+
   var added = 0, notAvail = 0;
-  toOrder.forEach(function(item) {
-    var lc = item.colorKey.replace(/^Color\s*/i,'');
-    var palStock = (INVENTORY[pid] && INVENTORY[pid][item.colorKey] && INVENTORY[pid][item.colorKey][item.size]) || 0;
-    if (palStock > 0) {
-      var existing = cart.find(function(c){ return c.product===pid && c.color===item.colorKey && c.size===item.size; });
+
+  // Iterate over ALL colors and sizes Palladium carries for this product
+  Object.keys(palPid).forEach(function(colorKey) {
+    var lc = colorKey.replace(/^Color\s*/i,'');
+    Object.keys(palPid[colorKey]).forEach(function(size) {
+      var palStock = parseInt(palPid[colorKey][size]) || 0;
+      if (palStock <= 0) return; // Palladium is out of this size — skip
+
+      // Store's current qty (0 if size/color is missing from store)
+      var storeQty = 0;
+      if (storeInv && storeInv[pid] && storeInv[pid][colorKey] && storeInv[pid][colorKey][size]) {
+        storeQty = parseInt(storeInv[pid][colorKey][size]) || 0;
+      }
+
+      var neededQty = Math.max(0, MINIMUM - storeQty);
+      if (neededQty <= 0) return; // Already at or above minimum
+
+      var orderQty = Math.min(neededQty, palStock);
+      var existing = cart.find(function(c){ return c.product===pid && c.color===colorKey && c.size===size; });
       if (existing) {
-        existing.qty = Math.min(existing.qty + 1, palStock);
+        existing.qty = Math.min(existing.qty + orderQty, palStock);
       } else {
-        cart.push({ id:nextId++, product:pid, color:item.colorKey, size:item.size, qty:1, lookupType:'main', lp:pid, lc:lc, ls:item.size });
+        cart.push({ id:nextId++, product:pid, color:colorKey, size:size, qty:orderQty, lookupType:'main', lp:pid, lc:lc, ls:size });
       }
       added++;
-    } else {
-      notAvail++;
-    }
+    });
   });
+
   renderCart();
   if (added > 0) {
     showPanel('order');
-    var msg = '✅ ' + added + ' size' + (added>1?'s':'') + ' added to order';
-    if (notAvail) msg += ' · ' + notAvail + ' not at Palladium';
-    showToast(msg);
+    showToast('✅ ' + added + ' size' + (added>1?'s':'') + ' added to order');
+  } else if (notAvail > 0) {
+    showToast('❌ None of the needed sizes are available at Palladium');
   } else {
-    showToast('❌ None of these sizes are available at Palladium right now');
+    showToast('✅ All sizes already at minimum 2 — nothing to order');
   }
 }
 
