@@ -158,12 +158,12 @@ tbody tr:last-child td{border-bottom:none}
 .btn-pdf:hover{background:#15803d}
 #pdf-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:9999;overflow-y:auto;color-scheme:light}
 #pdf-overlay-inner{max-width:600px;margin:0 auto;padding:20px;color:#000;background:#fff}
-.pdf-toolbar{position:sticky;top:0;background:#1a1a2e;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.pdf-toolbar{position:fixed;bottom:0;left:0;right:0;background:#1a1a2e;padding:12px 16px;padding-bottom:calc(12px + env(safe-area-inset-bottom));display:flex;align-items:center;justify-content:space-between;z-index:9999}
 .pdf-close{background:none;border:1px solid rgba(255,255,255,.4);color:#fff!important;padding:6px 14px;border-radius:6px;font-size:.83rem;cursor:pointer}
 @media print{
   body>*:not(#pdf-overlay){display:none!important}
   #pdf-overlay{display:block!important;position:static!important;height:auto!important;overflow:visible!important}
-  #pdf-overlay-inner{padding:0!important}
+  #pdf-overlay-inner{padding:0 0 80px!important}
   .pdf-toolbar{display:none!important}
   *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
 }
