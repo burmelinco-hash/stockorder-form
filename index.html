@@ -1916,12 +1916,10 @@ function palGenerateMasterSheet() {
     if (!allTargets[pid]) allTargets[pid] = {};
     allTargets[pid][sz] = val;
   });
-  // Debug: show targets in console
-  console.log('Targets being sent:', JSON.stringify(allTargets));
   google.script.run
     .withSuccessHandler(function(r) {
       if (btn) { btn.textContent = '📋 Save to Sheet'; btn.disabled = false; }
-      if (r && r.success) showToast('✅ Saved — ' + r.products + ' products, targets received: ' + r.targetCount);
+      if (r && r.success) showToast('✅ Saved — ' + r.products + ' products · ' + r.updated);
       else showToast('❌ ' + (r && r.error || 'Error'));
     })
     .withFailureHandler(function() {

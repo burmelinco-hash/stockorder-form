@@ -74,7 +74,7 @@ function handleApi(action, params, body) {
     case 'updateRetailStockQty': out = updateRetailStockQty(body.storeName, body.password, body.productId, body.colorNum, body.size, body.newQty); break;
     case 'addRetailStockItem':   out = addRetailStockItem(body.storeName, body.password, body.productId, body.category, body.colorNum, body.size, body.qty); break;
     case 'addRetailStockItems':    out = addRetailStockItems(body.storeName, body.password, body.items); break;
-    case 'generateMasterSheet':    out = generateMasterSheet(body.password); break;
+    case 'generateMasterSheet':    out = generateMasterSheet(body.password, body.targets); break;
     default:                     out = { success: false, error: 'Unknown action: ' + action };
   }
   return jsonOut(out);
@@ -1088,9 +1088,7 @@ function generateMasterSheet(password, targets) {
     var plan = ss.getSheetByName('Order Plan');
     if (!plan) { plan = ss.insertSheet('Order Plan'); } else { plan.clearContents(); plan.clearFormats(); }
 
-    // Debug row 1: show received targets
-    plan.getRange(1,1).setValue('DEBUG targets: ' + JSON.stringify(targets).substring(0,500));
-    var planRow = 2;
+    var planRow = 1;
     productOrder.forEach(function(pid) {
       var pidTargets = targets[pid] || targets[pid.trim()] || {};
       var sizes = sizeOrder[pid];
@@ -1163,8 +1161,7 @@ function generateMasterSheet(password, targets) {
     plan.autoResizeColumns(1, 20);
 
     var dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
-    var targetCount = Object.keys(targets).length;
-    return { success: true, products: productOrder.length, updated: dateStr, targetCount: targetCount, targetsReceived: JSON.stringify(targets).substring(0, 200) };
+    return { success: true, products: productOrder.length, updated: dateStr };
 
   } catch(e) { return { success: false, error: e.toString() }; }
 }
