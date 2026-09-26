@@ -2020,7 +2020,8 @@ function palRenderRetailView(){
     var a=s===PAL_RETAIL_TAB;
     return '<button onclick="palSelectRetailStore(\''+palEsc(s)+'\')" style="flex:1;padding:9px 4px;border-radius:8px;border:2px solid #7c3aed;font-size:.8rem;font-weight:700;cursor:pointer;background:'+(a?'#7c3aed':'#fff')+';color:'+(a?'#fff':'#7c3aed')+'">'+s+'</button>';
   }).join('');
-  el.innerHTML='<div style="display:flex;gap:7px;margin-bottom:12px">'+tabs+'</div>'
+  el.innerHTML='<div style="font-size:.78rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">🏬 Retail Stock</div>'
+    +'<div style="display:flex;gap:7px;margin-bottom:12px">'+tabs+'</div>'
     +'<div style="display:flex;gap:8px;margin-bottom:12px">'
     +'<input type="text" id="pal-retail-search" placeholder="🔍 Search ID or full code…" autocomplete="off" autocapitalize="characters" oninput="palFilterRetail(this.value)" style="flex:1;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:.9rem">'
     +'<button onclick="palShowAddItemForm()" style="padding:10px 14px;background:#7c3aed;color:#fff;border:none;border-radius:10px;font-weight:700;font-size:.9rem;cursor:pointer;white-space:nowrap">+ Add</button>'
@@ -2049,7 +2050,8 @@ function palBuildRetailList(storeName,q){
   var inv=ALL_RETAIL_STOCK&&ALL_RETAIL_STOCK[storeName];
   if(!inv) return '<div class="sp-empty">No data.</div>';
   ensurePalRef(palRefreshRetailList);
-  return stockGroupsHtml(inv,q,{lowMax:1,editStore:storeName,refInv:palRefInv()});
+  var groups=(STOCK_DATA&&STOCK_DATA.groups)||(GROUPS&&GROUPS.length?GROUPS:null);
+  return stockGroupsHtml(inv,q,{lowMax:1,editStore:storeName,refInv:palRefInv(),sections:groups});
 }
 
 function palRefreshRetailList(){
