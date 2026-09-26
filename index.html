@@ -1651,10 +1651,6 @@ function palMarkDone(orderId) {
 
 function palPrintInvoice(orderId) {
   var order=ALL_ORDERS.find(function(o){ return o.orderId===orderId; }); if(!order) return;
-  var rows=(order.items||[]).map(function(it){
-    return '<tr><td style="padding:8px 10px;border-bottom:1px solid #ddd">'+it.product+'</td><td style="padding:8px 10px;border-bottom:1px solid #ddd">'+it.color+'</td><td style="padding:8px 10px;border-bottom:1px solid #ddd">'+it.size+'</td><td style="padding:8px 10px;border-bottom:1px solid #ddd;text-align:center;font-weight:700">'+it.qty+'</td></tr>';
-  }).join('');
-  var total=(order.items||[]).reduce(function(s,i){ return s+i.qty; },0);
   document.getElementById('pdf-overlay-inner').innerHTML=
     '<div style="border-bottom:3px solid #1a1a2e;padding-bottom:14px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-end">'
     +'<div><div style="font-size:1.4rem;font-weight:900;color:#1a1a2e">Burmelin</div><div style="font-size:.82rem;color:#555">Order Invoice</div></div>'
@@ -1664,13 +1660,7 @@ function palPrintInvoice(orderId) {
     +'<tr><td style="padding:4px 0;color:#999">Customer</td><td>'+order.customerName+'</td></tr>'
     +(order.customerPhone?'<tr><td style="padding:4px 0;color:#999">Phone</td><td>'+order.customerPhone+'</td></tr>':'')
     +'</table>'
-    +'<table style="width:100%;border-collapse:collapse;border:1px solid #ddd;font-size:.88rem"><thead><tr style="background:#f0f0f0">'
-    +'<th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd">Product</th>'
-    +'<th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd">Color</th>'
-    +'<th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd">Size</th>'
-    +'<th style="padding:8px 10px;text-align:center;border-bottom:1px solid #ddd">Qty</th>'
-    +'</tr></thead><tbody>'+rows+'</tbody></table>'
-    +'<div style="padding:10px;display:flex;justify-content:space-between;border:1px solid #ddd;border-top:none;background:#f9f9f9"><span>Total Items</span><strong>'+total+'</strong></div>'
+    +buildItemsTable(order.items||[])
     +(order.notes?'<div style="margin-top:12px;padding:10px 12px;border-left:4px solid #d97706;background:#fffbeb;font-size:.85rem;color:#555"><strong>Notes:</strong> '+order.notes+'</div>':'');
   showPdfOverlay('Burmelin-'+order.orderId);
 }
@@ -2345,21 +2335,51 @@ function groupItemsByProduct(items) {
   return order.map(function(pid){ return {product:pid,items:map[pid]}; });
 }
 
-function buildGroupedRows(items) {
-  var groups=groupItemsByProduct(items), html='';
-  groups.forEach(function(g) {
-    var groupQty=g.items.reduce(function(s,i){ return s+i.qty; },0);
-    html+='<tr><td colspan="4" style="padding:10px 12px 6px;background:#f8fafc;font-size:.8rem;font-weight:700;color:#1a1a2e;text-transform:uppercase;letter-spacing:.04em;border-top:2px solid #e2e8f0">'+g.product+'</td></tr>';
-    g.items.forEach(function(i){ html+='<tr><td style="padding:8px 12px 8px 20px;border-bottom:1px solid #f0f2f5;color:#555;font-size:.88rem">'+i.color+'</td><td style="padding:8px 12px;border-bottom:1px solid #f0f2f5;color:#555;font-size:.88rem">'+i.size+'</td><td style="padding:8px 12px;border-bottom:1px solid #f0f2f5;color:#555;font-size:.88rem" colspan="2"></td><td style="padding:8px 12px;border-bottom:1px solid #f0f2f5;text-align:right;font-weight:600;color:#333;font-size:.88rem">'+i.qty+'</td></tr>'; });
-    html+='<tr><td colspan="3" style="padding:7px 12px 10px 20px;font-size:.8rem;color:#888">Subtotal</td><td style="padding:7px 12px 10px;text-align:right;font-weight:700;color:#1a1a2e;font-size:.88rem;border-bottom:2px solid #e2e8f0">'+groupQty+' pcs</td></tr>';
+function sortSizes(a, b) {
+  var na = parseFloat(a), nb = parseFloat(b);
+  if (!isNaN(na) && !isNaN(nb)) return na - nb;
+  var order = ['XS','S','M','L','XL','XXL','2XL','3XL','XXXL','4XL','5XL'];
+  var ia = order.indexOf(String(a).toUpperCase()), ib = order.indexOf(String(b).toUpperCase());
+  if (ia > -1 && ib > -1) return ia - ib;
+  return String(a).localeCompare(String(b));
+}
+
+function sumQty(list) { return list.reduce(function(s,i){ return s + (parseInt(i.qty) || 0); }, 0); }
+
+// Product → Color → Size table with color and product subtotals, plus grand total
+function buildItemsTable(items) {
+  var cell = 'padding:7px 12px;font-size:.86rem;';
+  var html = '<table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0">'
+    + '<thead><tr style="background:#f8fafc">'
+    + '<th style="padding:9px 12px;text-align:left;font-size:.72rem;text-transform:uppercase;color:#888;border-bottom:2px solid #e2e8f0">Color / Size</th>'
+    + '<th style="padding:9px 12px;text-align:right;font-size:.72rem;text-transform:uppercase;color:#888;border-bottom:2px solid #e2e8f0;width:90px">Qty</th>'
+    + '</tr></thead><tbody>';
+  groupItemsByProduct(items).forEach(function(g) {
+    var byColor = {}, colors = [];
+    g.items.forEach(function(i) {
+      if (!byColor[i.color]) { byColor[i.color] = []; colors.push(i.color); }
+      byColor[i.color].push(i);
+    });
+    colors.sort(function(a, b) { return sortSizes(String(a).replace(/^Color\s*/i,''), String(b).replace(/^Color\s*/i,'')); });
+    html += '<tr><td style="' + cell + 'padding-top:9px;padding-bottom:9px;background:#1a1a2e;color:#fff;font-weight:800;font-family:monospace;font-size:.95rem">' + g.product + '</td>'
+      + '<td style="' + cell + 'background:#1a1a2e;color:#fff;text-align:right;font-weight:700">' + sumQty(g.items) + ' pcs</td></tr>';
+    colors.forEach(function(c) {
+      var list = byColor[c].slice().sort(function(a, b) { return sortSizes(a.size, b.size); });
+      html += '<tr><td style="' + cell + 'background:#eef2ff;color:#1a1a2e;font-weight:700;border-top:1px solid #c7d2fe">' + c + '</td>'
+        + '<td style="' + cell + 'background:#eef2ff;color:#4f46e5;text-align:right;font-weight:700;border-top:1px solid #c7d2fe">' + sumQty(list) + ' pcs</td></tr>';
+      list.forEach(function(i) {
+        html += '<tr><td style="' + cell + 'padding-left:28px;color:#555;border-bottom:1px solid #f0f2f5">Size ' + i.size + '</td>'
+          + '<td style="' + cell + 'text-align:right;font-weight:600;color:#333;border-bottom:1px solid #f0f2f5">' + i.qty + '</td></tr>';
+      });
+    });
   });
+  html += '</tbody></table>'
+    + '<div style="background:#1a1a2e;padding:12px 16px;display:flex;justify-content:space-between"><span style="color:#fff;font-weight:700">TOTAL</span><strong style="color:#fff;font-size:1.05rem">' + sumQty(items) + ' pcs</strong></div>';
   return html;
 }
 
 function saveOrderPdf() {
   if (!lastOrder) return;
-  var total=lastOrder.items.reduce(function(s,i){ return s+i.qty; },0);
-  var rows=buildGroupedRows(lastOrder.items);
   document.getElementById('pdf-overlay-inner').innerHTML =
     '<div style="background:#1a1a2e;color:#fff;padding:24px;border-radius:10px 10px 0 0;text-align:center"><h1 style="margin:0 0 4px;font-size:1.4rem;color:#fff">Burmelin</h1><p style="margin:0;opacity:.7;font-size:.88rem;color:#fff">Order Confirmation</p></div>'
     +'<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 10px 10px;padding:24px;background:#fff">'
@@ -2368,8 +2388,7 @@ function saveOrderPdf() {
     +'<tr><td style="padding:4px 0;color:#999">Date</td><td style="color:#333">'+lastOrder.date+'</td></tr>'
     +'<tr><td style="padding:4px 0;color:#999">Shop</td><td style="color:#333"><strong>'+lastOrder.customerName+'</strong></td></tr>'
     +'</table>'
-    +'<table style="width:100%;border-collapse:collapse;font-size:.9rem"><thead><tr style="background:#f8fafc"><th style="padding:9px 12px;text-align:left;font-size:.75rem;text-transform:uppercase;color:#888;border-bottom:2px solid #e2e8f0" colspan="2">Color</th><th style="padding:9px 12px;text-align:left;font-size:.75rem;text-transform:uppercase;color:#888;border-bottom:2px solid #e2e8f0">Size</th><th style="padding:9px 12px;text-align:right;font-size:.75rem;text-transform:uppercase;color:#888;border-bottom:2px solid #e2e8f0">Qty</th></tr></thead><tbody>'+rows+'</tbody></table>'
-    +'<div style="background:#1a1a2e;padding:12px 16px;margin-top:0;display:flex;justify-content:space-between;border-radius:0 0 8px 8px"><span style="color:#fff;font-weight:700">TOTAL</span><strong style="color:#fff;font-size:1.05rem">'+total+' pcs</strong></div>'
+    +buildItemsTable(lastOrder.items)
     +'</div>';
   showPdfOverlay('Burmelin-'+lastOrder.orderId);
 }
