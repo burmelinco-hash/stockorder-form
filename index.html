@@ -471,8 +471,10 @@ var API_URL = 'https://script.google.com/macros/s/AKfycby-5YfvPpePbg1ni36sL5AI-D
 (function(){
   if (typeof google !== 'undefined' && google.script && google.script.run) return;
   var GET_ACTIONS = { getBusinessName:1, getInventory:1, getAllRetailStock:1 };
-  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'], addRetailStockItem:['storeName','password','productId','category','colorNum','size','qty'], addRetailStockItems:['storeName','password','items'], generateMasterSheet:['password','targets'] };
-  function makeRunner(){ var onOk=null,onErr=null; var runner={ withSuccessHandler:function(cb){onOk=cb;return runner;}, withFailureHandler:function(cb){onErr=cb;return runner;} }; function attach(name){ runner[name]=function(){ var args=arguments; function attempt(tries){ var ctrl=new AbortController(); var tid=setTimeout(function(){ctrl.abort();},20000); var req; if(GET_ACTIONS[name]){ req=fetch(API_URL+'?action='+encodeURIComponent(name),{signal:ctrl.signal}); }else{ var payload={action:name}; (POST_ARGS[name]||[]).forEach(function(k,i){payload[k]=args[i];}); req=fetch(API_URL,{method:'POST',body:JSON.stringify(payload),signal:ctrl.signal}); } req.then(function(r){clearTimeout(tid);if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(res){if(onOk)onOk(res);}).catch(function(err){ clearTimeout(tid); if(tries>0){ setTimeout(function(){attempt(tries-1);},1500); }else{ if(onErr)onErr(err); } }); } attempt(1); }; } Object.keys(GET_ACTIONS).forEach(attach); Object.keys(POST_ARGS).forEach(attach); return runner; }
+  // Only reads and repeat-safe writes may be auto-retried; a retried write could apply twice
+  var RETRY_OK = { getOrders:1, getStoreStock:1, verifyRetailStore:1, getSalesToday:1, sellRetailStock:1, markDone:1 };
+  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty','saleId'], getSalesToday:['storeName'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'], addRetailStockItem:['storeName','password','productId','category','colorNum','size','qty'], addRetailStockItems:['storeName','password','items'], generateMasterSheet:['password','targets'] };
+  function makeRunner(){ var onOk=null,onErr=null; var runner={ withSuccessHandler:function(cb){onOk=cb;return runner;}, withFailureHandler:function(cb){onErr=cb;return runner;} }; function attach(name){ runner[name]=function(){ var args=arguments; function attempt(tries){ var ctrl=new AbortController(); var tid=setTimeout(function(){ctrl.abort();},20000); var req; if(GET_ACTIONS[name]){ req=fetch(API_URL+'?action='+encodeURIComponent(name),{signal:ctrl.signal}); }else{ var payload={action:name}; (POST_ARGS[name]||[]).forEach(function(k,i){payload[k]=args[i];}); req=fetch(API_URL,{method:'POST',body:JSON.stringify(payload),signal:ctrl.signal}); } req.then(function(r){clearTimeout(tid);if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(res){if(onOk)onOk(res);}).catch(function(err){ clearTimeout(tid); if(tries>0){ setTimeout(function(){attempt(tries-1);},1500); }else{ if(onErr)onErr(err); } }); } attempt((GET_ACTIONS[name]||RETRY_OK[name])?1:0); }; } Object.keys(GET_ACTIONS).forEach(attach); Object.keys(POST_ARGS).forEach(attach); return runner; }
   window.google=window.google||{}; window.google.script=window.google.script||{}; Object.defineProperty(window.google.script,'run',{get:makeRunner});
 })();
 
@@ -877,6 +879,11 @@ function filterMyStock(q) {
 }
 
 // ── SELL TAB ──────────────────────────────────────────────────────
+// Kept after an unconfirmed sale: tapping Sell again for the same item reuses
+// the saleId, and the server ignores a saleId it has already processed.
+var PENDING_SALE = null;
+function newSaleId() { return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
+
 function renderSellTab() {
   document.getElementById('sp-body').innerHTML =
     '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:6px">Product ID (from label)</label>'
@@ -887,20 +894,80 @@ function renderSellTab() {
     + '<input id="sell-qty" type="number" min="1" value="1"'
     + ' style="width:100%;padding:13px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:1.05rem;font-family:inherit;margin-bottom:16px"'
     + ' onkeydown="if(event.key===\'Enter\')doSell()">'
-    + '<button onclick="doSell()" style="width:100%;padding:14px;background:#dc2626;color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer">💸 Sell</button>'
-    + '<div id="sell-result" style="margin-top:14px;text-align:center;font-size:.92rem;min-height:24px"></div>';
+    + '<button id="sell-btn" onclick="doSell()" style="width:100%;padding:14px;background:#dc2626;color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer">💸 Sell</button>'
+    + '<div id="sell-result" style="margin-top:14px;text-align:center;font-size:.92rem;min-height:24px"></div>'
+    + '<div style="margin-top:18px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">'
+    + '<span style="font-weight:800;color:#1a1a2e;font-size:.95rem">🧾 Today\'s Sales</span>'
+    + '<span id="sell-hist-total" style="font-size:.78rem;color:#888"></span></div>'
+    + '<div id="sell-history"><div style="text-align:center;color:#aaa;padding:16px;font-size:.85rem">Loading…</div></div>'
+    + '</div>';
   document.getElementById('sell-id').focus();
+  loadSalesHistory();
+}
+
+function loadSalesHistory() {
+  if (!SESSION_STORE) return;
+  google.script.run
+    .withSuccessHandler(function(r) {
+      var el = document.getElementById('sell-history'); if (!el) return;
+      if (!r || !r.success) { el.innerHTML = '<div class="sp-empty">⚠ Could not load today\'s sales.</div>'; return; }
+      renderSalesHistory(r.sales || []);
+    })
+    .withFailureHandler(function() {
+      var el = document.getElementById('sell-history'); if (!el) return;
+      el.innerHTML = '<div class="sp-empty" style="cursor:pointer" onclick="loadSalesHistory()">⚠ Could not load today\'s sales — tap to retry</div>';
+    })
+    .getSalesToday(SESSION_STORE.name);
+}
+
+function renderSalesHistory(sales) {
+  var el = document.getElementById('sell-history'), totEl = document.getElementById('sell-hist-total');
+  if (!el) return;
+  var pcs = sales.reduce(function(s, x) { return s + x.qty; }, 0);
+  if (totEl) totEl.textContent = sales.length ? sales.length + ' sale' + (sales.length !== 1 ? 's' : '') + ' · ' + pcs + ' pcs' : '';
+  if (!sales.length) {
+    el.innerHTML = '<div style="text-align:center;color:#aaa;padding:16px;font-size:.85rem;background:#fff;border-radius:10px">No sales yet today</div>';
+    return;
+  }
+  el.innerHTML = '<div style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06)">'
+    + sales.map(function(s) {
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #f0f2f5">'
+        + '<span style="font-size:.78rem;color:#999;width:40px;flex-shrink:0">' + s.time + '</span>'
+        + '<div style="flex:1;min-width:0">'
+        + '<div style="font-weight:700;color:#1a1a2e;font-family:monospace;font-size:.9rem">' + s.productId + '</div>'
+        + '<div style="font-size:.76rem;color:#666">Color ' + s.color + ' · Size ' + s.size + ' <span style="color:#bbb;font-family:monospace">' + s.code + '</span></div>'
+        + '</div>'
+        + '<div style="text-align:right">'
+        + '<div style="font-weight:800;color:#dc2626;font-size:.95rem">−' + s.qty + '</div>'
+        + '<div style="font-size:.7rem;color:#999">' + s.stockAfter + ' left</div>'
+        + '</div></div>';
+    }).join('') + '</div>';
 }
 
 function doSell() {
   var rowId = (document.getElementById('sell-id').value || '').trim().toUpperCase();
   var qty   = parseInt(document.getElementById('sell-qty').value) || 0;
   var resEl = document.getElementById('sell-result');
+  var btn   = document.getElementById('sell-btn');
+  if (btn.disabled) return;
   if (!rowId) { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter a product ID.</span>'; return; }
   if (qty <= 0) { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Quantity must be at least 1.</span>'; return; }
+  if (!PENDING_SALE || PENDING_SALE.rowId !== rowId || PENDING_SALE.qty !== qty) {
+    PENDING_SALE = { saleId: newSaleId(), rowId: rowId, qty: qty };
+  }
+  var sale = PENDING_SALE;
+  btn.disabled = true; btn.textContent = '⏳ Processing…'; btn.style.opacity = '.7';
   resEl.innerHTML = '<span style="color:#888">Processing…</span>';
+  function resetBtn() {
+    var b = document.getElementById('sell-btn');
+    if (b) { b.disabled = false; b.textContent = '💸 Sell'; b.style.opacity = '1'; }
+  }
   google.script.run
     .withSuccessHandler(function(r) {
+      resetBtn();
+      PENDING_SALE = null;
+      var el = document.getElementById('sell-result'); if (!el) return;
       if (r.success) {
         var inv = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name];
         if (inv) {
@@ -908,24 +975,30 @@ function doSell() {
             Object.keys(inv[pid]).forEach(function(colorKey) {
               var cn = colorKey.replace(/^Color\s*/i, '');
               Object.keys(inv[pid][colorKey]).forEach(function(size) {
-                if ((pid + cn + size).toUpperCase() === rowId) inv[pid][colorKey][size] = r.newQty;
+                if ((pid + cn + size).toUpperCase() === sale.rowId) inv[pid][colorKey][size] = r.newQty;
               });
             });
           });
         }
-        resEl.innerHTML = '<span style="color:#16a34a;font-weight:700">✓ Sold ' + qty + ' — New stock: ' + r.newQty + '</span>';
+        el.innerHTML = r.alreadyDone
+          ? '<span style="color:#15803d;font-weight:700">✓ This sale was already recorded — not deducted again.</span><br><span style="color:#555;font-size:.85rem">Stock now: ' + r.newQty + '</span>'
+          : '<span style="color:#16a34a;font-weight:700">✓ Sold ' + sale.qty + ' — New stock: ' + r.newQty + '</span>';
         document.getElementById('sell-id').value = '';
         document.getElementById('sell-qty').value = '1';
         document.getElementById('sell-id').focus();
       } else {
-        resEl.innerHTML = '<span style="color:#b91c1c">❌ ' + (r.error || 'Error') + '</span>';
+        el.innerHTML = '<span style="color:#b91c1c">❌ ' + (r.error || 'Error') + '</span>';
       }
+      loadSalesHistory();
     })
     .withFailureHandler(function() {
-      resEl.innerHTML = '<span style="color:#b91c1c">❌ Failed. Please try again.</span>';
-      showToast('Connection error — tap Retry', function(){ doSell(); });
+      resetBtn();
+      var el = document.getElementById('sell-result'); if (!el) return;
+      el.innerHTML = '<span style="color:#b45309;font-weight:700">⚠ Connection problem — sale not confirmed.</span>'
+        + '<br><span style="color:#555;font-size:.83rem">Check Today\'s Sales below. If it\'s not there, tap Sell again — it will never be deducted twice.</span>';
+      loadSalesHistory();
     })
-    .sellRetailStock(SESSION_STORE.name, SESSION_STORE.pass, rowId, qty);
+    .sellRetailStock(SESSION_STORE.name, SESSION_STORE.pass, sale.rowId, sale.qty, sale.saleId);
 }
 
 // ── TRANSFER TAB ──────────────────────────────────────────────────

@@ -68,7 +68,8 @@ function handleApi(action, params, body) {
     case 'updateStockQty':       out = updateStockQty(body.productId, body.colorNum, body.size, body.newQty, body.password); break;
     case 'getAllRetailStock':     out = getAllRetailStock(); break;
     case 'getStoreStock':        out = getRetailStock(body && body.storeName); break;
-    case 'sellRetailStock':      out = sellRetailStock(body.storeName, body.password, body.rowId, body.qty); break;
+    case 'sellRetailStock':      out = sellRetailStock(body.storeName, body.password, body.rowId, body.qty, body.saleId); break;
+    case 'getSalesToday':        out = getSalesToday(body && body.storeName); break;
     case 'transferStock':        out = transferStock(body.fromStore, body.toStore, body.password, body.rowId, body.qty); break;
     case 'verifyRetailStore':    out = verifyRetailStore(body.storeName, body.password); break;
     case 'updateRetailStockQty': out = updateRetailStockQty(body.storeName, body.password, body.productId, body.colorNum, body.size, body.newQty); break;
@@ -693,28 +694,96 @@ function transferStock(fromStore, toStore, password, rowId, qty) {
 }
 
 // ─── SELL FROM RETAIL STORE ───────────────────────────────────
-function sellRetailStock(storeName, password, rowId, qty) {
+// Every sale is logged here; the saleId makes a repeated request (retry / double tap) a no-op
+var SALES_LOG_SHEET = 'Sales Log';
+var SALES_LOG_HEADERS = ['Date/Time', 'Store', 'Code', 'Product ID', 'Color', 'Size', 'Qty', 'Stock After', 'Sale ID'];
+
+function getSalesLogSheet(ss) {
+  var sheet = ss.getSheetByName(SALES_LOG_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(SALES_LOG_SHEET);
+    sheet.appendRow(SALES_LOG_HEADERS);
+    sheet.getRange(1, 1, 1, SALES_LOG_HEADERS.length).setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function findLoggedSale(log, saleId) {
+  var last = log.getLastRow();
+  if (last < 2) return null;
+  var from = Math.max(2, last - 999);
+  var rows = log.getRange(from, 1, last - from + 1, SALES_LOG_HEADERS.length).getValues();
+  for (var i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i][8]) === String(saleId)) return { newQty: rows[i][7] };
+  }
+  return null;
+}
+
+function sellRetailStock(storeName, password, rowId, qty, saleId) {
   var validPass = (RETAIL_PASSWORDS[storeName] && password === RETAIL_PASSWORDS[storeName])
                || password === EMPLOYEE_PASS;
   if (!validPass) return { success: false, error: 'Wrong password.' };
+  var sellQ = parseInt(qty) || 0;
+  if (sellQ <= 0) return { success: false, error: 'Quantity must be at least 1.' };
+
+  // One sale at a time, so a retry can't slip in before the first one is logged
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(25000); } catch (e) { return { success: false, error: 'Server busy — please try again.' }; }
   try {
-    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var ss  = SpreadsheetApp.getActiveSpreadsheet();
+    var log = getSalesLogSheet(ss);
+    if (saleId) {
+      var prev = findLoggedSale(log, saleId);
+      if (prev) return { success: true, newQty: prev.newQty, alreadyDone: true };
+    }
     var sheet = ss.getSheetByName(storeName + ' Stock');
     if (!sheet) return { success: false, error: 'Store sheet not found.' };
     var data  = sheet.getDataRange().getValues();
-    var sellQ = parseInt(qty) || 0;
-    if (sellQ <= 0) return { success: false, error: 'Quantity must be at least 1.' };
+    var code  = String(rowId).trim().toUpperCase();
     for (var r = 1; r < data.length; r++) {
-      if (String(data[r][0]).trim().toUpperCase() === String(rowId).trim().toUpperCase()) {
-        var cur    = parseInt(data[r][5]) || 0;
+      if (String(data[r][0]).trim().toUpperCase() === code) {
+        var cur = parseInt(data[r][5]) || 0;
         if (cur < sellQ) return { success: false, error: 'Not enough stock. Available: ' + cur };
         var newQty = cur - sellQ;
         sheet.getRange(r + 1, 6).setValue(newQty);
+        log.appendRow([new Date(), storeName, code, data[r][1], data[r][3], data[r][4], sellQ, newQty, saleId || '']);
+        SpreadsheetApp.flush();
         return { success: true, newQty: newQty };
       }
     }
     return { success: false, error: 'ID not found: ' + rowId };
   } catch(e) {
+    return { success: false, error: e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Today's sales for one store (newest first), in the script's time zone
+function getSalesToday(storeName) {
+  try {
+    var ss  = SpreadsheetApp.getActiveSpreadsheet();
+    var log = ss.getSheetByName(SALES_LOG_SHEET);
+    if (!log || log.getLastRow() < 2) return { success: true, sales: [] };
+    var tz    = Session.getScriptTimeZone();
+    var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+    var last  = log.getLastRow();
+    var from  = Math.max(2, last - 1999);
+    var rows  = log.getRange(from, 1, last - from + 1, SALES_LOG_HEADERS.length).getValues();
+    var sales = [];
+    for (var i = rows.length - 1; i >= 0; i--) {
+      var d = rows[i][0];
+      if (!(d instanceof Date) || String(rows[i][1]) !== storeName) continue;
+      if (Utilities.formatDate(d, tz, 'yyyy-MM-dd') !== today) continue;
+      sales.push({
+        time: Utilities.formatDate(d, tz, 'HH:mm'),
+        code: String(rows[i][2]), productId: String(rows[i][3]), color: String(rows[i][4]),
+        size: String(rows[i][5]), qty: parseInt(rows[i][6]) || 0, stockAfter: rows[i][7]
+      });
+    }
+    return { success: true, sales: sales };
+  } catch (e) {
     return { success: false, error: e.toString() };
   }
 }
