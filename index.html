@@ -472,8 +472,8 @@ var API_URL = 'https://script.google.com/macros/s/AKfycby-5YfvPpePbg1ni36sL5AI-D
   if (typeof google !== 'undefined' && google.script && google.script.run) return;
   var GET_ACTIONS = { getBusinessName:1, getInventory:1, getAllRetailStock:1 };
   // Only reads and repeat-safe writes may be auto-retried; a retried write could apply twice
-  var RETRY_OK = { getOrders:1, getStoreStock:1, verifyRetailStore:1, getSalesToday:1, sellRetailStock:1, markDone:1 };
-  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty','saleId'], getSalesToday:['storeName'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'], addRetailStockItem:['storeName','password','productId','category','colorNum','size','qty'], addRetailStockItems:['storeName','password','items'], generateMasterSheet:['password','targets'] };
+  var RETRY_OK = { getOrders:1, getStoreStock:1, verifyRetailStore:1, getSalesToday:1, sellRetailStock:1, sellRetailStockBatch:1, markDone:1 };
+  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty','saleId'], sellRetailStockBatch:['storeName','password','items','saleId'], getSalesToday:['storeName'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'], addRetailStockItem:['storeName','password','productId','category','colorNum','size','qty'], addRetailStockItems:['storeName','password','items'], generateMasterSheet:['password','targets'] };
   function makeRunner(){ var onOk=null,onErr=null; var runner={ withSuccessHandler:function(cb){onOk=cb;return runner;}, withFailureHandler:function(cb){onErr=cb;return runner;} }; function attach(name){ runner[name]=function(){ var args=arguments; function attempt(tries){ var ctrl=new AbortController(); var tid=setTimeout(function(){ctrl.abort();},20000); var req; if(GET_ACTIONS[name]){ req=fetch(API_URL+'?action='+encodeURIComponent(name),{signal:ctrl.signal}); }else{ var payload={action:name}; (POST_ARGS[name]||[]).forEach(function(k,i){payload[k]=args[i];}); req=fetch(API_URL,{method:'POST',body:JSON.stringify(payload),signal:ctrl.signal}); } req.then(function(r){clearTimeout(tid);if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(res){if(onOk)onOk(res);}).catch(function(err){ clearTimeout(tid); if(tries>0){ setTimeout(function(){attempt(tries-1);},1500); }else{ if(onErr)onErr(err); } }); } attempt((GET_ACTIONS[name]||RETRY_OK[name])?1:0); }; } Object.keys(GET_ACTIONS).forEach(attach); Object.keys(POST_ARGS).forEach(attach); return runner; }
   window.google=window.google||{}; window.google.script=window.google.script||{}; Object.defineProperty(window.google.script,'run',{get:makeRunner});
 })();
@@ -879,31 +879,126 @@ function filterMyStock(q) {
 }
 
 // ── SELL TAB ──────────────────────────────────────────────────────
-// Kept after an unconfirmed sale: tapping Sell again for the same item reuses
-// the saleId, and the server ignores a saleId it has already processed.
+// One sale = up to 5 lines. After an unconfirmed sale, tapping Sell again with the
+// same lines reuses the saleId, and the server ignores a saleId it already processed.
+var SELL_MAX = 5;
+var SELL_LINES = [{ code: '', qty: 1 }];
 var PENDING_SALE = null;
 function newSaleId() { return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
 
+function sellCodeInfo(code) {
+  var inv = ALL_RETAIL_STOCK && SESSION_STORE && ALL_RETAIL_STOCK[SESSION_STORE.name];
+  if (!inv || !code) return null;
+  var found = null;
+  Object.keys(inv).some(function(pid) {
+    return Object.keys(inv[pid]).some(function(colorKey) {
+      var cn = colorKey.replace(/^Color\s*/i, '');
+      return Object.keys(inv[pid][colorKey]).some(function(size) {
+        if ((pid + cn + size).toUpperCase() !== code) return false;
+        found = { pid: pid, cn: cn, size: size, stock: parseInt(inv[pid][colorKey][size]) || 0 };
+        return true;
+      });
+    });
+  });
+  return found;
+}
+
 function renderSellTab() {
   document.getElementById('sp-body').innerHTML =
-    '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:6px">Product ID (from label)</label>'
-    + '<input id="sell-id" type="text" placeholder="e.g. T90274352" autocomplete="off" autocapitalize="characters"'
-    + ' style="width:100%;padding:13px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:1.05rem;font-family:monospace;margin-bottom:14px;text-transform:uppercase"'
-    + ' oninput="this.value=this.value.toUpperCase()" onkeydown="if(event.key===\'Enter\')doSell()">'
-    + '<label style="display:block;font-size:.85rem;font-weight:600;color:#555;margin-bottom:6px">Quantity to sell</label>'
-    + '<input id="sell-qty" type="number" min="1" value="1"'
-    + ' style="width:100%;padding:13px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:1.05rem;font-family:inherit;margin-bottom:16px"'
-    + ' onkeydown="if(event.key===\'Enter\')doSell()">'
-    + '<button id="sell-btn" onclick="doSell()" style="width:100%;padding:14px;background:#dc2626;color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer">💸 Sell</button>'
-    + '<div id="sell-result" style="margin-top:14px;text-align:center;font-size:.92rem;min-height:24px"></div>'
-    + '<div style="margin-top:18px">'
+    '<div style="background:#fff;border-radius:12px;padding:12px;box-shadow:0 1px 5px rgba(0,0,0,.07)">'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">'
+    + '<span style="font-weight:800;color:#1a1a2e">💸 New Sale</span>'
+    + '<span style="font-size:.74rem;color:#888">Product ID from label · Qty</span></div>'
+    + '<div id="sell-lines"></div>'
+    + '<button id="sell-add" onclick="sellAddLine()" style="width:100%;padding:10px;margin-top:4px;background:#fff;border:2px dashed #cbd5e1;border-radius:10px;color:#4f46e5;font-weight:700;font-size:.9rem;cursor:pointer"></button>'
+    + '</div>'
+    + '<button id="sell-btn" onclick="doSell()" style="width:100%;padding:14px;margin-top:12px;background:#dc2626;color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer"></button>'
+    + '<div id="sell-result" style="margin-top:12px;font-size:.9rem;min-height:20px"></div>'
+    + '<div style="margin-top:14px">'
     + '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">'
     + '<span style="font-weight:800;color:#1a1a2e;font-size:.95rem">🧾 Today\'s Sales</span>'
     + '<span id="sell-hist-total" style="font-size:.78rem;color:#888"></span></div>'
     + '<div id="sell-history"><div style="text-align:center;color:#aaa;padding:16px;font-size:.85rem">Loading…</div></div>'
     + '</div>';
-  document.getElementById('sell-id').focus();
+  renderSellLines();
+  var first = document.getElementById('sl-code-0'); if (first) first.focus();
   loadSalesHistory();
+}
+
+function renderSellLines() {
+  var box = document.getElementById('sell-lines'); if (!box) return;
+  box.innerHTML = SELL_LINES.map(function(l, i) {
+    return '<div style="margin-bottom:8px">'
+      + '<div style="display:flex;gap:6px;align-items:center">'
+      + '<span style="width:20px;height:20px;border-radius:50%;background:#1a1a2e;color:#fff;font-size:.7rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + (i + 1) + '</span>'
+      + '<input id="sl-code-' + i + '" type="text" value="' + l.code + '" placeholder="e.g. T8028852" autocomplete="off" autocapitalize="characters"'
+      + ' oninput="this.value=this.value.toUpperCase();sellLineInput(' + i + ',\'code\',this.value)"'
+      + ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();document.getElementById(\'sl-qty-' + i + '\').select();}"'
+      + ' style="flex:1;min-width:0;padding:11px 10px;border:2px solid #e2e8f0;border-radius:9px;font-size:1rem;font-family:monospace;text-transform:uppercase">'
+      + '<input id="sl-qty-' + i + '" type="number" min="1" value="' + l.qty + '" inputmode="numeric"'
+      + ' oninput="sellLineInput(' + i + ',\'qty\',this.value)"'
+      + ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();sellEnterNext(' + i + ');}"'
+      + ' style="width:58px;padding:11px 6px;border:2px solid #e2e8f0;border-radius:9px;font-size:1rem;text-align:center">'
+      + (SELL_LINES.length > 1
+          ? '<button onclick="sellRemoveLine(' + i + ')" aria-label="Remove item" style="width:32px;height:32px;border:none;background:#f1f5f9;border-radius:8px;color:#888;font-size:1rem;cursor:pointer;flex-shrink:0">✕</button>'
+          : '')
+      + '</div>'
+      + '<div id="sl-info-' + i + '" style="font-size:.74rem;margin:3px 0 0 26px;min-height:14px"></div>'
+      + '</div>';
+  }).join('');
+  SELL_LINES.forEach(function(l, i) { sellUpdateInfo(i); });
+  sellUpdateButtons();
+}
+
+function sellLineInput(i, field, val) {
+  if (!SELL_LINES[i]) return;
+  SELL_LINES[i][field] = field === 'qty' ? (parseInt(val) || 0) : String(val).trim();
+  sellUpdateInfo(i);
+  sellUpdateButtons();
+}
+
+function sellUpdateInfo(i) {
+  var el = document.getElementById('sl-info-' + i), l = SELL_LINES[i];
+  if (!el || !l) return;
+  if (!l.code) { el.innerHTML = ''; return; }
+  var info = sellCodeInfo(l.code);
+  if (!info) { el.innerHTML = l.code.length >= 6 ? '<span style="color:#b45309">Not found in your stock</span>' : ''; return; }
+  var enough = info.stock >= (l.qty || 0);
+  el.innerHTML = '<span style="color:#555">' + info.pid + ' · Color ' + info.cn + ' · Size ' + info.size + '</span>'
+    + ' <span style="color:' + (enough ? '#15803d' : '#b91c1c') + ';font-weight:700">· ' + info.stock + ' in stock</span>';
+}
+
+function sellUpdateButtons() {
+  var add = document.getElementById('sell-add'), btn = document.getElementById('sell-btn');
+  if (add) {
+    var full = SELL_LINES.length >= SELL_MAX;
+    add.disabled = full; add.style.opacity = full ? '.45' : '1';
+    add.textContent = full ? 'Maximum ' + SELL_MAX + ' items per sale' : '+ Add item (' + SELL_LINES.length + '/' + SELL_MAX + ')';
+  }
+  if (btn && !btn.disabled) {
+    var lines = SELL_LINES.filter(function(l) { return l.code; });
+    var pcs = lines.reduce(function(s, l) { return s + (l.qty || 0); }, 0);
+    btn.textContent = lines.length ? '💸 Sell ' + lines.length + ' item' + (lines.length !== 1 ? 's' : '') + ' · ' + pcs + ' pc' + (pcs !== 1 ? 's' : '') : '💸 Sell';
+  }
+}
+
+function sellAddLine() {
+  if (SELL_LINES.length >= SELL_MAX) return;
+  SELL_LINES.push({ code: '', qty: 1 });
+  renderSellLines();
+  document.getElementById('sl-code-' + (SELL_LINES.length - 1)).focus();
+}
+
+function sellRemoveLine(i) {
+  SELL_LINES.splice(i, 1);
+  if (!SELL_LINES.length) SELL_LINES.push({ code: '', qty: 1 });
+  renderSellLines();
+}
+
+function sellEnterNext(i) {
+  if (i + 1 < SELL_LINES.length) { document.getElementById('sl-code-' + (i + 1)).focus(); return; }
+  if (SELL_LINES.length < SELL_MAX && SELL_LINES[i].code) { sellAddLine(); return; }
+  doSell();
 }
 
 function loadSalesHistory() {
@@ -924,81 +1019,97 @@ function loadSalesHistory() {
 function renderSalesHistory(sales) {
   var el = document.getElementById('sell-history'), totEl = document.getElementById('sell-hist-total');
   if (!el) return;
+  // Rows arrive newest first; group lines of the same sale together
+  var groups = [], byId = {};
+  sales.forEach(function(s, i) {
+    var key = s.saleId || ('row' + i);
+    if (!byId[key]) { byId[key] = { time: s.time, lines: [] }; groups.push(byId[key]); }
+    byId[key].lines.unshift(s);
+  });
   var pcs = sales.reduce(function(s, x) { return s + x.qty; }, 0);
-  if (totEl) totEl.textContent = sales.length ? sales.length + ' sale' + (sales.length !== 1 ? 's' : '') + ' · ' + pcs + ' pcs' : '';
-  if (!sales.length) {
+  if (totEl) totEl.textContent = groups.length ? groups.length + ' sale' + (groups.length !== 1 ? 's' : '') + ' · ' + pcs + ' pcs' : '';
+  if (!groups.length) {
     el.innerHTML = '<div style="text-align:center;color:#aaa;padding:16px;font-size:.85rem;background:#fff;border-radius:10px">No sales yet today</div>';
     return;
   }
-  el.innerHTML = '<div style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06)">'
-    + sales.map(function(s) {
-      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #f0f2f5">'
-        + '<span style="font-size:.78rem;color:#999;width:40px;flex-shrink:0">' + s.time + '</span>'
-        + '<div style="flex:1;min-width:0">'
-        + '<div style="font-weight:700;color:#1a1a2e;font-family:monospace;font-size:.9rem">' + s.productId + '</div>'
-        + '<div style="font-size:.76rem;color:#666">Color ' + s.color + ' · Size ' + s.size + ' <span style="color:#bbb;font-family:monospace">' + s.code + '</span></div>'
-        + '</div>'
-        + '<div style="text-align:right">'
-        + '<div style="font-weight:800;color:#dc2626;font-size:.95rem">−' + s.qty + '</div>'
-        + '<div style="font-size:.7rem;color:#999">' + s.stockAfter + ' left</div>'
-        + '</div></div>';
-    }).join('') + '</div>';
+  el.innerHTML = groups.map(function(g) {
+    var gPcs = g.lines.reduce(function(s, x) { return s + x.qty; }, 0);
+    return '<div style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:8px">'
+      + '<div style="display:flex;justify-content:space-between;padding:7px 12px;background:#f8fafc;border-bottom:1px solid #eef0f3;font-size:.76rem;color:#666">'
+      + '<span>🕒 ' + g.time + '</span><span><strong style="color:#1a1a2e">' + g.lines.length + ' item' + (g.lines.length !== 1 ? 's' : '') + ' · ' + gPcs + ' pcs</strong></span></div>'
+      + g.lines.map(function(s) {
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #f5f6f8">'
+          + '<div style="flex:1;min-width:0">'
+          + '<div style="font-weight:700;color:#1a1a2e;font-family:monospace;font-size:.88rem">' + s.productId
+          + ' <span style="color:#bbb;font-weight:400;font-size:.74rem">' + s.code + '</span></div>'
+          + '<div style="font-size:.75rem;color:#666">Color ' + s.color + ' · Size ' + s.size + '</div>'
+          + '</div>'
+          + '<div style="text-align:right">'
+          + '<div style="font-weight:800;color:#dc2626;font-size:.92rem">−' + s.qty + '</div>'
+          + '<div style="font-size:.7rem;color:#999">' + s.stockAfter + ' left</div>'
+          + '</div></div>';
+      }).join('')
+      + '</div>';
+  }).join('');
 }
 
 function doSell() {
-  var rowId = (document.getElementById('sell-id').value || '').trim().toUpperCase();
-  var qty   = parseInt(document.getElementById('sell-qty').value) || 0;
   var resEl = document.getElementById('sell-result');
   var btn   = document.getElementById('sell-btn');
   if (btn.disabled) return;
-  if (!rowId) { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter a product ID.</span>'; return; }
-  if (qty <= 0) { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Quantity must be at least 1.</span>'; return; }
-  if (!PENDING_SALE || PENDING_SALE.rowId !== rowId || PENDING_SALE.qty !== qty) {
-    PENDING_SALE = { saleId: newSaleId(), rowId: rowId, qty: qty };
-  }
+  var lines = SELL_LINES.filter(function(l) { return l.code; })
+    .map(function(l) { return { rowId: l.code.toUpperCase(), qty: parseInt(l.qty) || 0 }; });
+  if (!lines.length) { resEl.innerHTML = '<span style="color:#b91c1c">⚠ Enter at least one product ID.</span>'; return; }
+  var bad = lines.filter(function(l) { return l.qty <= 0; })[0];
+  if (bad) { resEl.innerHTML = '<span style="color:#b91c1c">⚠ ' + bad.rowId + ': quantity must be at least 1.</span>'; return; }
+
+  var key = JSON.stringify(lines);
+  if (!PENDING_SALE || PENDING_SALE.key !== key) PENDING_SALE = { saleId: newSaleId(), key: key, lines: lines };
   var sale = PENDING_SALE;
   btn.disabled = true; btn.textContent = '⏳ Processing…'; btn.style.opacity = '.7';
-  resEl.innerHTML = '<span style="color:#888">Processing…</span>';
+  resEl.innerHTML = '<div style="text-align:center;color:#888">Processing…</div>';
   function resetBtn() {
     var b = document.getElementById('sell-btn');
-    if (b) { b.disabled = false; b.textContent = '💸 Sell'; b.style.opacity = '1'; }
+    if (b) { b.disabled = false; b.style.opacity = '1'; sellUpdateButtons(); }
   }
   google.script.run
     .withSuccessHandler(function(r) {
-      resetBtn();
-      PENDING_SALE = null;
-      var el = document.getElementById('sell-result'); if (!el) return;
-      if (r.success) {
+      var el = document.getElementById('sell-result');
+      if (r && r.success) {
+        PENDING_SALE = null;
         var inv = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name];
-        if (inv) {
-          Object.keys(inv).forEach(function(pid) {
-            Object.keys(inv[pid]).forEach(function(colorKey) {
-              var cn = colorKey.replace(/^Color\s*/i, '');
-              Object.keys(inv[pid][colorKey]).forEach(function(size) {
-                if ((pid + cn + size).toUpperCase() === sale.rowId) inv[pid][colorKey][size] = r.newQty;
-              });
-            });
-          });
-        }
-        el.innerHTML = r.alreadyDone
-          ? '<span style="color:#15803d;font-weight:700">✓ This sale was already recorded — not deducted again.</span><br><span style="color:#555;font-size:.85rem">Stock now: ' + r.newQty + '</span>'
-          : '<span style="color:#16a34a;font-weight:700">✓ Sold ' + sale.qty + ' — New stock: ' + r.newQty + '</span>';
-        document.getElementById('sell-id').value = '';
-        document.getElementById('sell-qty').value = '1';
-        document.getElementById('sell-id').focus();
+        (r.lines || []).forEach(function(line) {
+          var info = sellCodeInfo(line.code);
+          if (info && line.newQty !== '') inv[info.pid]['Color ' + info.cn][info.size] = parseInt(line.newQty) || 0;
+        });
+        var pcs = (r.lines || []).reduce(function(s, x) { return s + x.qty; }, 0);
+        SELL_LINES = [{ code: '', qty: 1 }];
+        renderSellLines();
+        resetBtn();
+        if (el) el.innerHTML = '<div style="background:' + (r.alreadyDone ? '#f0fdf4' : '#ecfdf5') + ';border:1px solid #bbf7d0;border-radius:10px;padding:10px 12px">'
+          + '<div style="color:#15803d;font-weight:800;margin-bottom:4px">'
+          + (r.alreadyDone ? '✓ This sale was already recorded — not deducted again' : '✓ Sold ' + r.lines.length + ' item' + (r.lines.length !== 1 ? 's' : '') + ' · ' + pcs + ' pcs')
+          + '</div>'
+          + (r.lines || []).map(function(x) {
+            return '<div style="display:flex;justify-content:space-between;font-size:.8rem;color:#555;font-family:monospace"><span>' + x.code + ' −' + x.qty + '</span><span>' + x.newQty + ' left</span></div>';
+          }).join('')
+          + '</div>';
+        var first = document.getElementById('sl-code-0'); if (first) first.focus();
       } else {
-        el.innerHTML = '<span style="color:#b91c1c">❌ ' + (r.error || 'Error') + '</span>';
+        PENDING_SALE = null;
+        resetBtn();
+        if (el) el.innerHTML = '<div style="color:#b91c1c;text-align:center">❌ ' + ((r && r.error) || 'Error') + '<br><span style="color:#888;font-size:.8rem">Nothing was deducted.</span></div>';
       }
       loadSalesHistory();
     })
     .withFailureHandler(function() {
       resetBtn();
       var el = document.getElementById('sell-result'); if (!el) return;
-      el.innerHTML = '<span style="color:#b45309;font-weight:700">⚠ Connection problem — sale not confirmed.</span>'
-        + '<br><span style="color:#555;font-size:.83rem">Check Today\'s Sales below. If it\'s not there, tap Sell again — it will never be deducted twice.</span>';
+      el.innerHTML = '<div style="text-align:center"><span style="color:#b45309;font-weight:700">⚠ Connection problem — sale not confirmed.</span>'
+        + '<br><span style="color:#555;font-size:.83rem">Check Today\'s Sales below. If it\'s not there, tap Sell again — it will never be deducted twice.</span></div>';
       loadSalesHistory();
     })
-    .sellRetailStock(SESSION_STORE.name, SESSION_STORE.pass, sale.rowId, sale.qty, sale.saleId);
+    .sellRetailStockBatch(SESSION_STORE.name, SESSION_STORE.pass, sale.lines, sale.saleId);
 }
 
 // ── TRANSFER TAB ──────────────────────────────────────────────────

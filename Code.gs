@@ -69,6 +69,7 @@ function handleApi(action, params, body) {
     case 'getAllRetailStock':     out = getAllRetailStock(); break;
     case 'getStoreStock':        out = getRetailStock(body && body.storeName); break;
     case 'sellRetailStock':      out = sellRetailStock(body.storeName, body.password, body.rowId, body.qty, body.saleId); break;
+    case 'sellRetailStockBatch': out = sellRetailStockBatch(body.storeName, body.password, body.items, body.saleId); break;
     case 'getSalesToday':        out = getSalesToday(body && body.storeName); break;
     case 'transferStock':        out = transferStock(body.fromStore, body.toStore, body.password, body.rowId, body.qty); break;
     case 'verifyRetailStore':    out = verifyRetailStore(body.storeName, body.password); break;
@@ -760,6 +761,70 @@ function sellRetailStock(storeName, password, rowId, qty, saleId) {
   }
 }
 
+// Sell up to 5 lines as one sale. All lines are checked before anything is deducted,
+// so a sale never goes through halfway. Lines are logged as saleId#1, saleId#2, …
+function sellRetailStockBatch(storeName, password, items, saleId) {
+  var validPass = (RETAIL_PASSWORDS[storeName] && password === RETAIL_PASSWORDS[storeName])
+               || password === EMPLOYEE_PASS;
+  if (!validPass) return { success: false, error: 'Wrong password.' };
+  if (!saleId) return { success: false, error: 'Missing sale ID.' };
+  items = (items || []).map(function(it) {
+    return { code: String(it.rowId || '').trim().toUpperCase(), qty: parseInt(it.qty) || 0 };
+  }).filter(function(it) { return it.code; });
+  if (!items.length) return { success: false, error: 'No items to sell.' };
+  if (items.length > 5) return { success: false, error: 'Maximum 5 items per sale.' };
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].qty <= 0) return { success: false, error: items[i].code + ': quantity must be at least 1.' };
+  }
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(25000); } catch (e) { return { success: false, error: 'Server busy — please try again.' }; }
+  try {
+    var ss  = SpreadsheetApp.getActiveSpreadsheet();
+    var log = getSalesLogSheet(ss);
+    if (findLoggedSale(log, saleId + '#1')) {
+      return { success: true, alreadyDone: true, lines: items.map(function(it, k) {
+        var p = findLoggedSale(log, saleId + '#' + (k + 1));
+        return { code: it.code, qty: it.qty, newQty: p ? p.newQty : '' };
+      }) };
+    }
+    var sheet = ss.getSheetByName(storeName + ' Stock');
+    if (!sheet) return { success: false, error: 'Store sheet not found.' };
+    var data = sheet.getDataRange().getValues();
+    var rowOf = {};
+    for (var r = 1; r < data.length; r++) {
+      var id = String(data[r][0]).trim().toUpperCase();
+      if (id && rowOf[id] === undefined) rowOf[id] = r;
+    }
+    // Validate everything first (same code on two lines counts together)
+    var left = {};
+    for (var j = 0; j < items.length; j++) {
+      var c = items[j].code;
+      if (rowOf[c] === undefined) return { success: false, error: 'ID not found: ' + c };
+      if (left[c] === undefined) left[c] = parseInt(data[rowOf[c]][5]) || 0;
+      left[c] -= items[j].qty;
+      if (left[c] < 0) return { success: false, error: c + ': not enough stock. Available: ' + (parseInt(data[rowOf[c]][5]) || 0) };
+    }
+    // Apply
+    var now = new Date(), stock = {}, logRows = [], lines = [];
+    items.forEach(function(it, k) {
+      var row = rowOf[it.code];
+      if (stock[it.code] === undefined) stock[it.code] = parseInt(data[row][5]) || 0;
+      stock[it.code] -= it.qty;
+      logRows.push([now, storeName, it.code, data[row][1], data[row][3], data[row][4], it.qty, stock[it.code], saleId + '#' + (k + 1)]);
+      lines.push({ code: it.code, qty: it.qty, newQty: stock[it.code] });
+    });
+    Object.keys(stock).forEach(function(code) { sheet.getRange(rowOf[code] + 1, 6).setValue(stock[code]); });
+    log.getRange(log.getLastRow() + 1, 1, logRows.length, SALES_LOG_HEADERS.length).setValues(logRows);
+    SpreadsheetApp.flush();
+    return { success: true, lines: lines };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 // Today's sales for one store (newest first), in the script's time zone
 function getSalesToday(storeName) {
   try {
@@ -779,7 +844,8 @@ function getSalesToday(storeName) {
       sales.push({
         time: Utilities.formatDate(d, tz, 'HH:mm'),
         code: String(rows[i][2]), productId: String(rows[i][3]), color: String(rows[i][4]),
-        size: String(rows[i][5]), qty: parseInt(rows[i][6]) || 0, stockAfter: rows[i][7]
+        size: String(rows[i][5]), qty: parseInt(rows[i][6]) || 0, stockAfter: rows[i][7],
+        saleId: String(rows[i][8]).split('#')[0]
       });
     }
     return { success: true, sales: sales };
