@@ -72,7 +72,8 @@ function handleApi(action, params, body) {
     case 'sellRetailStockBatch': out = sellRetailStockBatch(body.storeName, body.password, body.items, body.saleId); break;
     case 'getSalesToday':        out = getSalesToday(body && body.storeName); break;
     case 'transferStock':        out = transferStock(body.fromStore, body.toStore, body.password, body.rowId, body.qty); break;
-    case 'verifyRetailStore':    out = verifyRetailStore(body.storeName, body.password); break;
+    case 'verifyRetailStore':    out = verifyRetailStore(body.storeName, body.password, body.withData); break;
+    case 'getStoreBundle':       out = getStoreBundle(body && body.storeName); break;
     case 'updateRetailStockQty': out = updateRetailStockQty(body.storeName, body.password, body.productId, body.colorNum, body.size, body.newQty); break;
     case 'addRetailStockItem':   out = addRetailStockItem(body.storeName, body.password, body.productId, body.category, body.colorNum, body.size, body.qty); break;
     case 'addRetailStockItems':    out = addRetailStockItems(body.storeName, body.password, body.items); break;
@@ -349,6 +350,9 @@ function markDone(orderId, password) {
   if (password !== EMPLOYEE_PASS) {
     return { success: false, error: 'Wrong password.' };
   }
+  // One completion at a time, so a retry can't pass the "Completed" guard while the first is still running
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(25000); } catch (e) { return { success: false, error: 'Server busy — please try again.' }; }
   try {
     var order = findOrder(orderId);
     if (!order) return { success: false, error: 'Order not found: ' + orderId };
@@ -359,30 +363,18 @@ function markDone(orderId, password) {
     }
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var warnings = [];
-
-    if (order.orderType === 'store' && order.shopName) {
-      // Store order: add ordered items to the shop's stock sheet
-      for (var j = 0; j < order.items.length; j++) {
-        var sit = order.items[j];
-        var lp  = sit.lp  || sit.product || '';
-        var lc  = sit.lc  || (sit.color || '').replace(/^Color\s*/i, '');
-        var ls  = sit.ls  || sit.size    || '';
-        var sres = addStockToStore(ss, order.shopName, lp, lc, ls, sit.qty || 0);
-        if (!sres.success) {
-          warnings.push(sit.product + ' | ' + sit.color + ' | ' + sit.size + ': ' + sres.error);
-        }
-      }
-    } else {
-      // Customer order: deduct stock from wholesale Size Chart
-      for (var i = 0; i < order.items.length; i++) {
-        var item   = order.items[i];
-        var result = deductStock(ss, item);
-        if (!result.success) {
-          warnings.push(item.product + ' | ' + item.color + ' | ' + item.size + ': ' + result.error);
-        }
-      }
-    }
+    var lines = order.items.map(function(it) {
+      return {
+        pid: String(it.lp || it.product || '').trim(),
+        col: String(it.lc || (it.color || '').replace(/^Color\s*/i, '')).trim(),
+        sz:  String(it.ls || it.size || '').trim(),
+        qty: parseInt(it.qty) || 0,
+        label: it.product + ' | ' + it.color + ' | ' + it.size
+      };
+    });
+    var warnings = (order.orderType === 'store' && order.shopName)
+      ? addItemsToStore(ss, order.shopName, lines)      // store order: add to the shop's stock
+      : deductItemsFromWholesale(ss, order.items, lines); // customer order: deduct from Size Chart
 
     // Mark as Completed — also record the invoice timestamp if not already set
     var doneAt  = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
@@ -393,10 +385,13 @@ function markDone(orderId, password) {
     // Save final confirmed items to Sent Orders sheet
     try { saveSentOrder(ss, order, doneAt); } catch(e) {}
 
+    SpreadsheetApp.flush();
     return { success: true, warnings: warnings };
 
   } catch (err) {
     return { success: false, error: err.toString() };
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -449,23 +444,19 @@ function saveSentOrder(ss, order, doneAt) {
   }
 
   var items = order.items || [];
-  for (var i = 0; i < items.length; i++) {
-    var item = items[i];
-    sheet.appendRow([
-      order.orderId,
-      doneAt,
-      order.customerName  || '',
-      order.customerPhone || '',
-      order.notes         || '',
-      item.product,
-      item.color,
-      item.size,
-      item.qty
-    ]);
-    // Alternate row shading
-    var lastRow = sheet.getLastRow();
-    if (lastRow % 2 === 0) sheet.getRange(lastRow, 1, 1, 9).setBackground('#f8fafc');
-  }
+  if (!items.length) return;
+  var rows = items.map(function(item) {
+    return [order.orderId, doneAt, order.customerName || '', order.customerPhone || '', order.notes || '',
+            item.product, item.color, item.size, item.qty];
+  });
+  // Write all rows in one call, with alternate row shading
+  var start = sheet.getLastRow() + 1;
+  var range = sheet.getRange(start, 1, rows.length, 9);
+  range.setValues(rows);
+  range.setBackgrounds(rows.map(function(r, i) {
+    var bg = (start + i) % 2 === 0 ? '#f8fafc' : '#ffffff';
+    return [bg, bg, bg, bg, bg, bg, bg, bg, bg];
+  }));
 }
 
 // ─── INTERNAL: FIND ORDER ROW ─────────────────────────────────
@@ -525,38 +516,68 @@ function updateOrderRow(orderId, updates) {
 }
 
 // ─── INTERNAL: ADD STOCK TO RETAIL STORE (used when marking store order Done) ─
-function addStockToStore(ss, shopName, productId, colorNum, size, qty) {
-  try {
-    var sheetName = shopName + ' Stock';
-    var sheet = ss.getSheetByName(sheetName);
-    if (!sheet) return { success: false, error: 'Sheet not found for store: ' + shopName };
-
-    var data = sheet.getDataRange().getValues();
-    var startRow = 1;
-    for (var h = 0; h < data.length; h++) {
-      if (String(data[h][1]).trim().toLowerCase() === 'product id') { startRow = h + 1; break; }
-    }
-
-    var pid = String(productId).trim();
-    var col = String(colorNum).trim();
-    var sz  = String(size).trim();
-
-    for (var r = startRow; r < data.length; r++) {
-      if (String(data[r][1]).trim() === pid &&
-          String(data[r][3]).trim() === col &&
-          String(data[r][4]).trim() === sz) {
-        var cur = parseInt(data[r][5]) || 0;
-        sheet.getRange(r + 1, 6).setValue(cur + (parseInt(qty) || 0));
-        return { success: true };
-      }
-    }
-    // Row doesn't exist — create it
-    var compositeId = pid + col + sz;
-    sheet.appendRow([compositeId, pid, '', col, sz, parseInt(qty) || 0]);
-    return { success: true };
-  } catch(err) {
-    return { success: false, error: err.toString() };
+// Stock sheets: first row whose column B says "Product ID" is the header
+function sheetDataStart(data) {
+  for (var h = 0; h < data.length; h++) {
+    if (String(data[h][1]).trim().toLowerCase() === 'product id') return h + 1;
   }
+  return 1;
+}
+
+// Add quantities to a shop's stock sheet: one read, then only the changed cells + one append
+function addItemsToStore(ss, shopName, lines) {
+  var sheet = ss.getSheetByName(shopName + ' Stock');
+  if (!sheet) return lines.map(function(l) { return l.label + ': Sheet not found for store: ' + shopName; });
+  var data = sheet.getDataRange().getValues();
+  var rowOf = {};
+  for (var r = sheetDataStart(data); r < data.length; r++) {
+    var k = String(data[r][1]).trim() + '|' + String(data[r][3]).trim() + '|' + String(data[r][4]).trim();
+    if (rowOf[k] === undefined) rowOf[k] = r;
+  }
+  var changed = {}, appends = [], appendAt = {};
+  lines.forEach(function(l) {
+    var k = l.pid + '|' + l.col + '|' + l.sz;
+    if (rowOf[k] !== undefined) {
+      var row = rowOf[k];
+      data[row][5] = (parseInt(data[row][5]) || 0) + l.qty;
+      changed[row] = true;
+    } else if (appendAt[k] !== undefined) {
+      appends[appendAt[k]][5] += l.qty;
+    } else {
+      appendAt[k] = appends.length;
+      appends.push([l.pid + l.col + l.sz, l.pid, '', l.col, l.sz, l.qty]);
+    }
+  });
+  Object.keys(changed).forEach(function(row) { sheet.getRange(Number(row) + 1, 6).setValue(data[row][5]); });
+  if (appends.length) sheet.getRange(sheet.getLastRow() + 1, 1, appends.length, 6).setValues(appends);
+  return [];
+}
+
+// Deduct a customer order from the Size Chart in one pass; anything not found there
+// falls back to the old sheet-by-sheet search
+function deductItemsFromWholesale(ss, items, lines) {
+  var warnings = [];
+  var sheet = ss.getSheetByName(INVENTORY_SHEET_NAME);
+  var data = sheet ? sheet.getDataRange().getValues() : [];
+  var rowOf = {};
+  for (var r = sheetDataStart(data); r < data.length; r++) {
+    var k = String(data[r][1]).trim() + '|' + String(data[r][3]).trim() + '|' + String(data[r][4]).trim();
+    if (rowOf[k] === undefined) rowOf[k] = r;
+  }
+  var changed = {};
+  lines.forEach(function(l, i) {
+    var k = l.pid + '|' + l.col + '|' + l.sz;
+    if (rowOf[k] !== undefined) {
+      var row = rowOf[k];
+      data[row][5] = Math.max(0, (parseInt(data[row][5]) || 0) - l.qty);
+      changed[row] = true;
+    } else {
+      var res = deductStock(ss, items[i]);
+      if (!res.success) warnings.push(l.label + ': ' + res.error);
+    }
+  });
+  Object.keys(changed).forEach(function(row) { sheet.getRange(Number(row) + 1, 6).setValue(data[row][5]); });
+  return warnings;
 }
 
 // ─── INTERNAL: DEDUCT STOCK ───────────────────────────────────
@@ -666,6 +687,8 @@ function transferStock(fromStore, toStore, password, rowId, qty) {
   if (fromStore === toStore) return { success: false, error: 'Source and destination must differ.' };
   var sellQ = parseInt(qty) || 0;
   if (sellQ <= 0) return { success: false, error: 'Quantity must be at least 1.' };
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(25000); } catch (e) { return { success: false, error: 'Server busy — please try again.' }; }
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     function sheetFor(name) {
@@ -690,8 +713,10 @@ function transferStock(fromStore, toStore, password, rowId, qty) {
     if (!to) return { success: false, error: 'ID not found in ' + toStore + ': ' + rowId };
     fromSheet.getRange(from.row, 6).setValue(from.qty - sellQ);
     toSheet.getRange(to.row, 6).setValue(to.qty + sellQ);
+    SpreadsheetApp.flush();
     return { success: true, fromNewQty: from.qty - sellQ, toNewQty: to.qty + sellQ };
   } catch(e) { return { success: false, error: e.toString() }; }
+  finally { lock.releaseLock(); }
 }
 
 // ─── SELL FROM RETAIL STORE ───────────────────────────────────
@@ -786,7 +811,7 @@ function sellRetailStockBatch(storeName, password, items, saleId) {
       return { success: true, alreadyDone: true, lines: items.map(function(it, k) {
         var p = findLoggedSale(log, saleId + '#' + (k + 1));
         return { code: it.code, qty: it.qty, newQty: p ? p.newQty : '' };
-      }) };
+      }), sales: getSalesToday(storeName).sales };
     }
     var sheet = ss.getSheetByName(storeName + ' Stock');
     if (!sheet) return { success: false, error: 'Store sheet not found.' };
@@ -817,7 +842,7 @@ function sellRetailStockBatch(storeName, password, items, saleId) {
     Object.keys(stock).forEach(function(code) { sheet.getRange(rowOf[code] + 1, 6).setValue(stock[code]); });
     log.getRange(log.getLastRow() + 1, 1, logRows.length, SALES_LOG_HEADERS.length).setValues(logRows);
     SpreadsheetApp.flush();
-    return { success: true, lines: lines };
+    return { success: true, lines: lines, sales: getSalesToday(storeName).sales };
   } catch (e) {
     return { success: false, error: e.toString() };
   } finally {
@@ -855,10 +880,27 @@ function getSalesToday(storeName) {
 }
 
 // ─── VERIFY RETAIL STORE LOGIN ────────────────────────────────
-function verifyRetailStore(storeName, password) {
+// withData: also return the store's stock + Palladium's inventory, so login needs one request
+function verifyRetailStore(storeName, password, withData) {
   if (!RETAIL_PASSWORDS[storeName]) return { success: false, error: 'Unknown store.' };
   if (password !== RETAIL_PASSWORDS[storeName]) return { success: false, error: 'Wrong password.' };
-  return { success: true };
+  if (!withData) return { success: true };
+  var bundle = getStoreBundle(storeName);
+  bundle.success = true;
+  return bundle;
+}
+
+// Store stock + Palladium inventory/groups in one request
+function getStoreBundle(storeName) {
+  var st = getRetailStock(storeName);
+  if (!st.success) return st;
+  var inv = getInventory();
+  return {
+    success: true,
+    stores: st.stores,
+    inventory: inv.success ? inv.inventory : null,
+    groups: inv.success ? inv.groups : []
+  };
 }
 
 // ─── GET ALL RETAIL STOCK (public read, no password needed) ───
@@ -872,6 +914,7 @@ function getRetailStock(storeName) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var storeNames = storeName ? [storeName] : ['Bicasso 1', 'Bicasso 2', 'Bicasso Nana', 'Palladium'];
     var storesData = {};
+    var groups = null; // Palladium's categories, same shape as getInventory().groups
 
     storeNames.forEach(function(name) {
       var sheetName = name === 'Palladium' ? INVENTORY_SHEET_NAME : name + ' Stock';
@@ -894,7 +937,16 @@ function getRetailStock(storeName) {
           var stock    = parseInt(row[5]) || 0;
           if (!pid || !color || !size) continue;
           var colorKey = 'Color ' + color;
-          if (!inventory[pid]) inventory[pid] = {};
+          if (!inventory[pid]) {
+            inventory[pid] = {};
+            if (name === 'Palladium') {
+              var cat = String(row[2]).trim();
+              groups = groups || [];
+              var g = groups.filter(function(x) { return x.label === cat; })[0];
+              if (!g) { g = { label: cat, products: [] }; groups.push(g); }
+              g.products.push(pid);
+            }
+          }
           if (!inventory[pid][colorKey]) inventory[pid][colorKey] = {};
           inventory[pid][colorKey][size] = stock;
         }
@@ -902,7 +954,7 @@ function getRetailStock(storeName) {
       storesData[name] = inventory;
     });
 
-    return { success: true, stores: storesData };
+    return groups ? { success: true, stores: storesData, groups: groups } : { success: true, stores: storesData };
   } catch(err) {
     return { success: false, error: err.toString() };
   }
@@ -947,45 +999,41 @@ function addRetailStockItems(storeName, password, items) {
   var validPass = (RETAIL_PASSWORDS[storeName] && password === RETAIL_PASSWORDS[storeName])
                || password === EMPLOYEE_PASS;
   if (!validPass) return { success: false, error: 'Wrong password.' };
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(25000); } catch (e) { return { success: false, error: 'Server busy — please try again.' }; }
   try {
-    var ss        = SpreadsheetApp.getActiveSpreadsheet();
-    var sheetName = storeName + ' Stock';
-    var sheet     = ss.getSheetByName(sheetName);
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(storeName + ' Stock');
     if (!sheet) return { success: false, error: 'Sheet for "' + storeName + '" not found.' };
 
-    var data     = sheet.getDataRange().getValues();
-    var startRow = 1;
-    for (var h = 0; h < data.length; h++) {
-      if (String(data[h][1]).trim().toLowerCase() === 'product id') { startRow = h + 1; break; }
+    // One read; later items with the same key update the same row / pending append
+    var data  = sheet.getDataRange().getValues();
+    var rowOf = {};
+    for (var r = sheetDataStart(data); r < data.length; r++) {
+      var k = String(data[r][1]).trim() + '|' + String(data[r][3]).trim() + '|' + String(data[r][4]).trim();
+      if (rowOf[k] === undefined) rowOf[k] = r;
     }
-
-    var results = [];
-    for (var n = 0; n < items.length; n++) {
-      var it = items[n];
-      var pid = String(it.productId).trim();
-      var col = String(it.colorNum).trim();
-      var sz  = String(it.size).trim();
-      var qty = parseInt(it.qty) || 0;
-      var found = false;
-      // Re-read data each iteration so previous appends are visible
-      var d2 = sheet.getDataRange().getValues();
-      for (var r = startRow; r < d2.length; r++) {
-        if (String(d2[r][1]).trim() === pid &&
-            String(d2[r][3]).trim() === col &&
-            String(d2[r][4]).trim() === sz) {
-          sheet.getRange(r + 1, 6).setValue(qty);
-          found = true; break;
-        }
-      }
-      if (!found) {
-        var compositeId = pid + col + sz;
-        sheet.appendRow([compositeId, pid, it.category || '', col, sz, qty]);
+    var appends = [], appendAt = {}, results = [];
+    (items || []).forEach(function(it) {
+      var pid = String(it.productId).trim(), col = String(it.colorNum).trim(), sz = String(it.size).trim();
+      var qty = parseInt(it.qty) || 0, key = pid + '|' + col + '|' + sz;
+      if (rowOf[key] !== undefined) {
+        sheet.getRange(rowOf[key] + 1, 6).setValue(qty);
+      } else if (appendAt[key] !== undefined) {
+        appends[appendAt[key]][5] = qty;
+      } else {
+        appendAt[key] = appends.length;
+        appends.push([pid + col + sz, pid, it.category || '', col, sz, qty]);
       }
       results.push({ size: sz, ok: true });
-    }
+    });
+    if (appends.length) sheet.getRange(sheet.getLastRow() + 1, 1, appends.length, 6).setValues(appends);
+    SpreadsheetApp.flush();
     return { success: true, results: results };
   } catch(err) {
     return { success: false, error: err.toString() };
+  } finally {
+    lock.releaseLock();
   }
 }
 

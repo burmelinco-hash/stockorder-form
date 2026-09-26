@@ -474,9 +474,11 @@ var API_URL = 'https://script.google.com/macros/s/AKfycby-5YfvPpePbg1ni36sL5AI-D
   if (typeof google !== 'undefined' && google.script && google.script.run) return;
   var GET_ACTIONS = { getBusinessName:1, getInventory:1, getAllRetailStock:1 };
   // Only reads and repeat-safe writes may be auto-retried; a retried write could apply twice
-  var RETRY_OK = { getOrders:1, getStoreStock:1, verifyRetailStore:1, getSalesToday:1, sellRetailStock:1, sellRetailStockBatch:1, markDone:1 };
-  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty','saleId'], sellRetailStockBatch:['storeName','password','items','saleId'], getSalesToday:['storeName'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'], addRetailStockItem:['storeName','password','productId','category','colorNum','size','qty'], addRetailStockItems:['storeName','password','items'], generateMasterSheet:['password','targets'] };
-  function makeRunner(){ var onOk=null,onErr=null; var runner={ withSuccessHandler:function(cb){onOk=cb;return runner;}, withFailureHandler:function(cb){onErr=cb;return runner;} }; function attach(name){ runner[name]=function(){ var args=arguments; function attempt(tries){ var ctrl=new AbortController(); var tid=setTimeout(function(){ctrl.abort();},20000); var req; if(GET_ACTIONS[name]){ req=fetch(API_URL+'?action='+encodeURIComponent(name),{signal:ctrl.signal}); }else{ var payload={action:name}; (POST_ARGS[name]||[]).forEach(function(k,i){payload[k]=args[i];}); req=fetch(API_URL,{method:'POST',body:JSON.stringify(payload),signal:ctrl.signal}); } req.then(function(r){clearTimeout(tid);if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(res){if(onOk)onOk(res);}).catch(function(err){ clearTimeout(tid); if(tries>0){ setTimeout(function(){attempt(tries-1);},1500); }else{ if(onErr)onErr(err); } }); } attempt((GET_ACTIONS[name]||RETRY_OK[name])?1:0); }; } Object.keys(GET_ACTIONS).forEach(attach); Object.keys(POST_ARGS).forEach(attach); return runner; }
+  // Writes get longer before giving up: a false 'connection error' while the server is still working leads to re-taps
+  var WRITES = { submitOrder:1, sendInvoice:1, deleteOrder:1, editOrderItems:1, markDone:1, sellRetailStock:1, sellRetailStockBatch:1, transferStock:1, updateRetailStockQty:1, addRetailStockItem:1, addRetailStockItems:1, generateMasterSheet:1 };
+  var RETRY_OK = { getOrders:1, getStoreStock:1, getStoreBundle:1, verifyRetailStore:1, getSalesToday:1, sellRetailStock:1, sellRetailStockBatch:1, markDone:1 };
+  var POST_ARGS = { getOrders:['password'], submitOrder:['order'], sendInvoice:['orderId','password'], deleteOrder:['orderId','password'], editOrderItems:['orderId','newItems','password'], markDone:['orderId','password'], verifyRetailStore:['storeName','password','withData'], getStoreBundle:['storeName'], getStoreStock:['storeName'], sellRetailStock:['storeName','password','rowId','qty','saleId'], sellRetailStockBatch:['storeName','password','items','saleId'], getSalesToday:['storeName'], transferStock:['fromStore','toStore','password','rowId','qty'], updateRetailStockQty:['storeName','password','productId','colorNum','size','newQty'], addRetailStockItem:['storeName','password','productId','category','colorNum','size','qty'], addRetailStockItems:['storeName','password','items'], generateMasterSheet:['password','targets'] };
+  function makeRunner(){ var onOk=null,onErr=null; var runner={ withSuccessHandler:function(cb){onOk=cb;return runner;}, withFailureHandler:function(cb){onErr=cb;return runner;} }; function attach(name){ runner[name]=function(){ var args=arguments; function attempt(tries){ var ctrl=new AbortController(); var tid=setTimeout(function(){ctrl.abort();},WRITES[name]?45000:20000); var req; if(GET_ACTIONS[name]){ req=fetch(API_URL+'?action='+encodeURIComponent(name),{signal:ctrl.signal}); }else{ var payload={action:name}; (POST_ARGS[name]||[]).forEach(function(k,i){payload[k]=args[i];}); req=fetch(API_URL,{method:'POST',body:JSON.stringify(payload),signal:ctrl.signal}); } req.then(function(r){clearTimeout(tid);if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(res){if(onOk)onOk(res);}).catch(function(err){ clearTimeout(tid); if(tries>0){ setTimeout(function(){attempt(tries-1);},1500); }else{ if(onErr)onErr(err); } }); } attempt((GET_ACTIONS[name]||RETRY_OK[name])?1:0); }; } Object.keys(GET_ACTIONS).forEach(attach); Object.keys(POST_ARGS).forEach(attach); return runner; }
   window.google=window.google||{}; window.google.script=window.google.script||{}; Object.defineProperty(window.google.script,'run',{get:makeRunner});
 })();
 
@@ -617,6 +619,7 @@ function doStoreLogin() {
         if (result.success) {
           SESSION_STORE = { name: storeName, pass: pass };
           try { localStorage.setItem('burmelin_session', JSON.stringify(SESSION_STORE)); } catch(e){}
+          if (result.stores) { applyStoreBundle(result); cacheSet('bundle_' + storeName, result); }
           showApp();
         } else {
           errEl.textContent = '❌ Wrong passcode. Please try again.';
@@ -626,7 +629,7 @@ function doStoreLogin() {
         btn.textContent = 'Enter Store'; btn.disabled = false;
         errEl.textContent = '❌ Connection error. Please try again.';
       })
-      .verifyRetailStore(storeName, pass);
+      .verifyRetailStore(storeName, pass, true);
   }
 }
 
@@ -634,7 +637,7 @@ function showApp() {
   document.getElementById('app-store-label').textContent = SESSION_STORE.name;
   document.getElementById('screen-login').style.display = 'none';
   document.getElementById('screen-app').classList.add('active');
-  try { google.script.run.withSuccessHandler(function(name){ if(name){ document.title='Burmelin Staff — '+name; } }).getBusinessName(); } catch(e){}
+  document.title = 'Burmelin Staff — Burmelin';
   if (SESSION_STORE.isPalladium) {
     document.getElementById('screen-app').classList.add('pal-mode');
     document.getElementById('nav-mystore').innerHTML = '<span class="nav-icon">📋</span><span>Orders</span>';
@@ -653,6 +656,8 @@ function showApp() {
 
 function appLogout() {
   try { localStorage.removeItem('burmelin_session'); } catch(e){}
+  cacheClear();
+  INVENTORY_LOADED = false;
   SESSION_STORE    = null;
   ALL_RETAIL_STOCK = null;
   ALL_ORDERS       = [];
@@ -726,26 +731,100 @@ function showPanel(name) {
 }
 
 // ── STOCK LOADING ─────────────────────────────────────────────────
+// ── SAVED COPY OF LAST-LOADED DATA ────────────────────────────────
+// Screens show the saved copy instantly, then replace it when fresh data arrives.
+function cacheGet(key) { try { var v = localStorage.getItem('bm_cache_' + key); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+function cacheSet(key, val) { try { localStorage.setItem('bm_cache_' + key, JSON.stringify(val)); } catch (e) {} }
+function cacheClear() {
+  try { Object.keys(localStorage).forEach(function(k) { if (k.indexOf('bm_cache_') === 0) localStorage.removeItem(k); }); } catch (e) {}
+}
+var UPDATING_COUNT = 0;
+function setUpdating(on) {
+  UPDATING_COUNT = Math.max(0, UPDATING_COUNT + (on ? 1 : -1));
+  var b = document.getElementById('btn-refresh');
+  if (b) b.classList.toggle('spinning', UPDATING_COUNT > 0);
+}
+
+function applyStoreBundle(r) {
+  ALL_RETAIL_STOCK = ALL_RETAIL_STOCK || {};
+  Object.keys(r.stores || {}).forEach(function(k) { ALL_RETAIL_STOCK[k] = r.stores[k]; });
+  if (r.inventory) { INVENTORY = r.inventory; GROUPS = r.groups || []; INVENTORY_LOADED = true; }
+}
+
+// Re-draw the current store tab with new data, without wiping anything being typed
+function refreshStoreView() {
+  if (CURRENT_PANEL !== 'mystore') return;
+  if (CURRENT_TAB === 'mystock') {
+    var el = document.getElementById('ms-list'), s = document.getElementById('ms-search');
+    if (el) rerenderKeepOpen(el, myStockHtml(s ? s.value : '')); else renderMyStock();
+  } else if (CURRENT_TAB === 'reorder') {
+    renderReorderTab();
+  }
+}
+
+// Store stock + Palladium sizes in one request
 function loadStoreStock() {
   if (!SESSION_STORE) return;
   var myStore = SESSION_STORE.name;
-  if (ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[myStore]) { switchStoreTab('mystock'); return; }
-  document.getElementById('sp-body').innerHTML = '<div style="text-align:center;padding:40px;color:#888"><div class="spinner"></div><br><br>Loading stock…</div>';
+  if (ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[myStore]) { switchStoreTab(CURRENT_TAB || 'mystock'); return; }
+  var cached = cacheGet('bundle_' + myStore);
+  if (cached) { applyStoreBundle(cached); switchStoreTab(CURRENT_TAB || 'mystock'); }
+  else document.getElementById('sp-body').innerHTML = '<div style="text-align:center;padding:40px;color:#888"><div class="spinner"></div><br><br>Loading stock…</div>';
+  setUpdating(true);
   google.script.run
-    .withSuccessHandler(function(result) {
-      if (result.success) {
-        ALL_RETAIL_STOCK = ALL_RETAIL_STOCK || {};
-        Object.keys(result.stores || {}).forEach(function(k){ ALL_RETAIL_STOCK[k] = result.stores[k]; });
-        switchStoreTab('mystock');
-      } else {
+    .withSuccessHandler(function(r) {
+      setUpdating(false);
+      if (r && !r.success && /Unknown action/.test(r.error || '')) {
+        // Server not redeployed yet: fall back to the old stock-only request
+        setUpdating(true);
+        google.script.run.withSuccessHandler(function(o) {
+          setUpdating(false);
+          if (o && o.success) { applyStoreBundle(o); CS_ROWS = null; if (cached) refreshStoreView(); else switchStoreTab(CURRENT_TAB || 'mystock'); }
+        }).withFailureHandler(function() { setUpdating(false); }).getStoreStock(myStore);
+        return;
+      }
+      if (r && r.success) {
+        applyStoreBundle(r); cacheSet('bundle_' + myStore, r); CS_ROWS = null;
+        if (cached) refreshStoreView(); else switchStoreTab(CURRENT_TAB || 'mystock');
+      } else if (!cached) {
         document.getElementById('sp-body').innerHTML = '<div class="sp-empty">⚠ Could not load stock. Please try again.</div>';
       }
     })
     .withFailureHandler(function() {
-      document.getElementById('sp-body').innerHTML = '<div class="sp-empty">⚠ Could not load stock.</div>';
-      showToast('Connection error — tap Retry', function(){ ALL_RETAIL_STOCK=null; loadStoreStock(); });
+      setUpdating(false);
+      if (!cached) document.getElementById('sp-body').innerHTML = '<div class="sp-empty">⚠ Could not load stock.</div>';
+      showToast(cached ? 'Could not update — showing saved stock' : 'Connection error — tap Retry', function(){ ALL_RETAIL_STOCK=null; loadStoreStock(); });
     })
-    .getStoreStock(myStore);
+    .getStoreBundle(myStore);
+}
+
+// All 4 stores (incl. Palladium) + Palladium categories in one request.
+// onData runs with the saved copy first (if any), then again with fresh data.
+function applyAllRetail(r, fromCache) {
+  ALL_RETAIL_STOCK = ALL_RETAIL_STOCK || {};
+  Object.keys(r.stores || {}).forEach(function(k) {
+    if (!fromCache || !ALL_RETAIL_STOCK[k]) ALL_RETAIL_STOCK[k] = r.stores[k];
+  });
+  if (r.stores && r.stores.Palladium && r.groups && (!fromCache || !STOCK_DATA)) {
+    STOCK_DATA = { success: true, inventory: r.stores.Palladium, groups: r.groups };
+  }
+}
+
+function loadAllRetail(onData, onFail) {
+  var cached = cacheGet('allretail');
+  if (cached) { applyAllRetail(cached, true); onData(); }
+  setUpdating(true);
+  google.script.run
+    .withSuccessHandler(function(r) {
+      setUpdating(false);
+      if (r && r.success) { applyAllRetail(r, false); cacheSet('allretail', r); onData(); }
+      else if (!cached) onFail(r && r.error);
+    })
+    .withFailureHandler(function() {
+      setUpdating(false);
+      if (!cached) onFail(); else showToast('Could not update — showing saved stock');
+    })
+    .getAllRetailStock();
 }
 
 // ── STORE TABS ────────────────────────────────────────────────────
@@ -854,7 +933,9 @@ function stockGroupsHtml(inv, q, opts) {
 }
 
 // Palladium's inventory = the reference size range for every product
-function palRefInv() { return (STOCK_DATA && STOCK_DATA.inventory) || (INVENTORY_LOADED && INVENTORY) || null; }
+function palRefInv() {
+  return (STOCK_DATA && STOCK_DATA.inventory) || (INVENTORY_LOADED && INVENTORY) || (ALL_RETAIL_STOCK && ALL_RETAIL_STOCK.Palladium) || null;
+}
 
 var PAL_REF_LOADING = false;
 function ensurePalRef(onReady) {
@@ -1118,7 +1199,7 @@ function doSell() {
         resetBtn();
         if (el) el.innerHTML = '<div style="color:#b91c1c;text-align:center">❌ ' + ((r && r.error) || 'Error') + '<br><span style="color:#888;font-size:.8rem">Nothing was deducted.</span></div>';
       }
-      loadSalesHistory();
+      if (r && r.sales) renderSalesHistory(r.sales); else loadSalesHistory();
     })
     .withFailureHandler(function() {
       resetBtn();
@@ -1324,22 +1405,16 @@ function renderOtherStores() {
   var allLoaded = ALL_STORES.every(function(s){ return ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[s]; });
   if (!allLoaded) {
     el.innerHTML = '<div style="text-align:center;padding:40px;color:#888"><div class="spinner"></div><br><br>Loading stores…</div>';
-    google.script.run
-      .withSuccessHandler(function(result) {
-        if (result.success) {
-          ALL_RETAIL_STOCK = ALL_RETAIL_STOCK || {};
-          Object.keys(result.stores || {}).forEach(function(k){ ALL_RETAIL_STOCK[k] = result.stores[k]; });
-          CS_ROWS = null;
-          renderOtherStores();
-        } else {
-          el.innerHTML = '<div class="sp-empty">⚠ Could not load store data.</div>';
-        }
-      })
-      .withFailureHandler(function(){
-        el.innerHTML = '<div class="sp-empty">⚠ Could not load store data.</div>';
-        showToast('Connection error — tap Retry', function(){ ALL_RETAIL_STOCK=null; CS_ROWS=null; renderOtherStores(); });
-      })
-      .getAllRetailStock();
+    loadAllRetail(function() {
+      CS_ROWS = null;
+      if (CURRENT_PANEL !== 'stores') return;
+      var inp = document.getElementById('cs-inp');
+      if (inp) { buildCsRows(); csSearchFlat(inp.value); }
+      else if (ALL_STORES.every(function(s){ return ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[s]; })) renderOtherStores();
+    }, function() {
+      el.innerHTML = '<div class="sp-empty">⚠ Could not load store data.</div>';
+      showToast('Connection error — tap Retry', function(){ ALL_RETAIL_STOCK=null; CS_ROWS=null; renderOtherStores(); });
+    });
     return;
   }
   if (!CS_ROWS) buildCsRows();
@@ -1441,8 +1516,9 @@ function showCsResult(pid) {
 // ── ORDER FORM (Inventory load — deferred until Order panel opens) ─
 var INVENTORY_LOADED = false;
 
+var DROPDOWN_INV = null; // the INVENTORY object the product dropdown was last built from
 function loadInventory() {
-  if (INVENTORY_LOADED) return;
+  if (INVENTORY_LOADED) { if (DROPDOWN_INV !== INVENTORY) buildProductDropdown(); return; }
   selProd.innerHTML = '<option value="">⏳ Loading products…</option>';
   selProd.disabled = true;
   try {
@@ -1608,6 +1684,7 @@ function selectProduct(prod) {
 }
 
 function buildProductDropdown() {
+  DROPDOWN_INV = INVENTORY;
   selProd.innerHTML='<option value="">— Choose a product —</option>';
   GROUPS.forEach(function(g) {
     var og=document.createElement('optgroup'); og.label=g.label;
@@ -1965,15 +2042,25 @@ function palPrintInvoice(orderId) {
 function palShowStock() {
   var el=document.getElementById('stores-content'); if(!el) return;
   if(STOCK_DATA){ palRenderStockCats(); return; }
-  el.innerHTML='<div style="text-align:center;padding:40px;color:#888"><div class="spinner"></div><br><br>Loading stock…</div>';
+  var cached=cacheGet('palinv');
+  if(cached){ STOCK_DATA=cached; palRenderStockCats(); }
+  else el.innerHTML='<div style="text-align:center;padding:40px;color:#888"><div class="spinner"></div><br><br>Loading stock…</div>';
+  setUpdating(true);
   google.script.run
     .withSuccessHandler(function(r){
-      if(r&&r.success){ STOCK_DATA=r; palRenderStockCats(); }
-      else { el.innerHTML='<div class="sp-empty">⚠ '+(r&&r.error||'Error')+'</div>'; }
+      setUpdating(false);
+      if(r&&r.success){
+        STOCK_DATA=r; cacheSet('palinv',r);
+        if(CURRENT_PANEL!=='stores') return;
+        var body=document.getElementById('pal-stock-body'), s=document.getElementById('pal-ss');
+        if(cached&&body) rerenderKeepOpen(body,palStockHtml(s?s.value:'')); else palRenderStockCats();
+      }
+      else if(!cached){ el.innerHTML='<div class="sp-empty">⚠ '+(r&&r.error||'Error')+'</div>'; }
     })
     .withFailureHandler(function(){
-      el.innerHTML='<div class="sp-empty">⚠ Could not load stock.</div>';
-      showToast('Connection error — tap Retry',function(){ STOCK_DATA=null; palShowStock(); });
+      setUpdating(false);
+      if(!cached) el.innerHTML='<div class="sp-empty">⚠ Could not load stock.</div>';
+      showToast(cached?'Could not update — showing saved stock':'Connection error — tap Retry',function(){ STOCK_DATA=null; palShowStock(); });
     })
     .getInventory();
 }
@@ -2001,16 +2088,13 @@ function palLoadRetail(){
   var RSTORES=['Bicasso 1','Bicasso 2','Bicasso Nana'];
   if(ALL_RETAIL_STOCK&&RSTORES.every(function(s){ return ALL_RETAIL_STOCK[s]; })){ palRenderRetailView(); return; }
   el.innerHTML='<div style="text-align:center;padding:40px;color:#888"><div class="spinner"></div><br><br>Loading retail stock…</div>';
-  google.script.run
-    .withSuccessHandler(function(r){
-      if(r&&r.success){ ALL_RETAIL_STOCK=r.stores; palRenderRetailView(); }
-      else { el.innerHTML='<div class="sp-empty">⚠ '+(r&&r.error||'Error')+'</div>'; }
-    })
-    .withFailureHandler(function(){
-      el.innerHTML='<div class="sp-empty">⚠ Could not load retail stock.</div>';
-      showToast('Connection error — tap Retry',function(){ ALL_RETAIL_STOCK=null; palLoadRetail(); });
-    })
-    .getAllRetailStock();
+  loadAllRetail(function(){
+    if(CURRENT_PANEL!=='order') return;
+    if(document.getElementById('pal-retail-list')) palRefreshRetailList(); else palRenderRetailView();
+  },function(err){
+    el.innerHTML='<div class="sp-empty">⚠ '+(err||'Could not load retail stock.')+'</div>';
+    showToast('Connection error — tap Retry',function(){ ALL_RETAIL_STOCK=null; palLoadRetail(); });
+  });
 }
 
 function palRenderRetailView(){
@@ -2127,42 +2211,26 @@ var PLAN_DATA = null; // combined retail+wholesale stock
 
 function palShowPlan() {
   var el = document.getElementById('plan-content'); if (!el) return;
-  // Need both wholesale inventory and all retail stock
+  // Needs wholesale inventory + all retail stock; one request returns both
   var allLoaded = STOCK_DATA && ALL_RETAIL_STOCK &&
     ['Bicasso 1','Bicasso 2','Bicasso Nana'].every(function(s){ return ALL_RETAIL_STOCK[s]; });
-  if (!allLoaded) {
-    el.innerHTML = '<div style="text-align:center;padding:40px;color:#888"><div class="spinner"></div><br><br>Loading data…</div>';
-    // Load both in parallel via sequential calls
-    var needed = !STOCK_DATA ? 'inventory' : (!ALL_RETAIL_STOCK ? 'retail' : 'retail');
+  if (allLoaded) { palRenderPlan(); return; }
+  el.innerHTML = '<div style="text-align:center;padding:40px;color:#888"><div class="spinner"></div><br><br>Loading data…</div>';
+  loadAllRetail(function() {
+    if (CURRENT_PANEL !== 'plan') return;
     if (!STOCK_DATA) {
-      google.script.run
-        .withSuccessHandler(function(r) {
-          if (r && r.success) { STOCK_DATA = r; palShowPlan(); }
-          else { el.innerHTML = '<div class="sp-empty">⚠ Could not load wholesale stock.</div>'; }
-        })
-        .withFailureHandler(function() {
-          el.innerHTML = '<div class="sp-empty">⚠ Connection error.</div>';
-          showToast('Connection error — tap Retry', function(){ palShowPlan(); });
-        })
-        .getInventory();
-    } else {
-      google.script.run
-        .withSuccessHandler(function(r) {
-          if (r && r.success) {
-            ALL_RETAIL_STOCK = ALL_RETAIL_STOCK || {};
-            Object.keys(r.stores || {}).forEach(function(k){ ALL_RETAIL_STOCK[k] = r.stores[k]; });
-            palShowPlan();
-          } else { el.innerHTML = '<div class="sp-empty">⚠ Could not load retail stock.</div>'; }
-        })
-        .withFailureHandler(function() {
-          el.innerHTML = '<div class="sp-empty">⚠ Connection error.</div>';
-          showToast('Connection error — tap Retry', function(){ palShowPlan(); });
-        })
-        .getAllRetailStock();
+      // Older server: all-stores reply has no categories, so fetch Palladium's inventory too
+      google.script.run.withSuccessHandler(function(r) { if (r && r.success) { STOCK_DATA = r; if (CURRENT_PANEL === 'plan') palRenderPlan(); } }).getInventory();
+      return;
     }
-    return;
-  }
-  palRenderPlan();
+    // Don't redraw under someone typing an order target
+    var a = document.activeElement;
+    if (a && a.tagName === 'INPUT' && el.contains(a)) return;
+    palRenderPlan();
+  }, function() {
+    el.innerHTML = '<div class="sp-empty">⚠ Connection error.</div>';
+    showToast('Connection error — tap Retry', function(){ palShowPlan(); });
+  });
 }
 
 function palGenerateMasterSheet() {
