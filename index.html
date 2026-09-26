@@ -177,6 +177,40 @@ tbody tr:last-child td{border-bottom:none}
 #app-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #app-toast button{background:rgba(255,255,255,.2);border:none;color:#fff;padding:4px 10px;border-radius:6px;font-size:.8rem;font-weight:700;cursor:pointer;pointer-events:all}
 
+/* ── STOCK GROUPS (product › color › size boxes) ── */
+.sg-summary{display:flex;gap:8px;margin-bottom:10px}
+.sg-stat{flex:1;background:#fff;border-radius:10px;padding:8px 10px;box-shadow:0 1px 4px rgba(0,0,0,.06);text-align:center}
+.sg-stat b{display:block;font-size:1.05rem;color:#1a1a2e}
+.sg-stat span{font-size:.68rem;color:#888;text-transform:uppercase;letter-spacing:.04em}
+.sg-legend{display:flex;gap:12px;font-size:.72rem;color:#888;margin:0 2px 10px}
+.sg-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.sg-card{background:#fff;border-radius:12px;margin-bottom:9px;box-shadow:0 1px 5px rgba(0,0,0,.07);overflow:hidden}
+.sg-card>summary{list-style:none;display:flex;align-items:center;gap:8px;padding:12px 14px;cursor:pointer;-webkit-user-select:none;user-select:none}
+.sg-card>summary::-webkit-details-marker{display:none}
+.sg-card>summary::after{content:'›';font-size:1.3rem;color:#bbb;transition:transform .15s;margin-left:2px}
+.sg-card[open]>summary::after{transform:rotate(90deg)}
+.sg-card[open]>summary{border-bottom:1px solid #f0f2f5}
+.sg-pid{font-family:monospace;font-weight:800;font-size:1rem;color:#1a1a2e}
+.sg-meta{flex:1;font-size:.74rem;color:#888}
+.sg-pill{font-size:.7rem;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap}
+.sg-pill.low{background:#fef3c7;color:#b45309}
+.sg-pill.out{background:#fee2e2;color:#b91c1c}
+.sg-total{font-weight:800;color:#1a1a2e;font-size:.9rem;white-space:nowrap}
+.sg-color{padding:10px 14px 12px;border-bottom:1px solid #f5f6f8}
+.sg-color:last-child{border-bottom:none}
+.sg-color-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+.sg-color-name{font-weight:700;color:#1a1a2e;font-size:.88rem}
+.sg-color-qty{font-size:.76rem;color:#4f46e5;font-weight:700}
+.sg-sizes{display:grid;grid-template-columns:repeat(auto-fill,minmax(50px,1fr));gap:6px}
+.sg-chip{display:flex;flex-direction:column;align-items:center;padding:5px 2px 4px;border-radius:8px;border:1px solid;line-height:1.15}
+.sg-chip .sz{font-size:.66rem;font-weight:600;opacity:.8}
+.sg-chip .q{font-size:1rem;font-weight:800}
+.sg-chip.ok{background:#ecfdf5;border-color:#bbf7d0;color:#15803d}
+.sg-chip.low{background:#fffbeb;border-color:#fde68a;color:#b45309}
+.sg-chip.out{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+.sg-chip.edit{cursor:pointer}
+.sg-chip.edit:active{transform:scale(.95)}
+
 /* ── PALLADIUM MODE ── */
 .pal-mode .ms-tabs{display:none}
 .pal-mode .order-banner,.pal-mode #order-success,.pal-mode #order-form-wrap{display:none!important}
@@ -726,60 +760,83 @@ function switchStoreTab(tab) {
 }
 
 // ── MY STOCK ──────────────────────────────────────────────────────
-function myStockBadge(qty) {
-  return qty === 0 ? 'rs-out' : qty <= 3 ? 'rs-low' : 'rs-ok';
+// ── STOCK GROUPS: product card › color row › size boxes ──────────
+function stockLevel(qty, lowMax) { return qty <= 0 ? 'out' : qty <= lowMax ? 'low' : 'ok'; }
+
+function stockChipId(store, pid, colorKey, size) {
+  return ('chip-' + store + '-' + pid + '-' + colorKey + '-' + size).replace(/[^\w-]/g, '_');
 }
 
-function flatRows(inv) {
-  var rows = [];
-  if (!inv) return rows;
-  Object.keys(inv).forEach(function(pid) {
-    Object.keys(inv[pid]).forEach(function(colorKey) {
+function colorNumSort(a, b) {
+  return sortSizes(String(a).replace(/^Color\s*/i,''), String(b).replace(/^Color\s*/i,''));
+}
+
+// inv = {pid:{colorKey:{size:qty}}}. opts: lowMax (qty counted as "low"), editStore (tap a box to edit)
+function stockGroupsHtml(inv, q, opts) {
+  opts = opts || {};
+  var lowMax = opts.lowMax == null ? 1 : opts.lowMax;
+  q = String(q || '').trim().toUpperCase().replace(/\s+/g, '');
+  var pids = Object.keys(inv || {});
+  var cards = [], sumPcs = 0, sumLow = 0, sumOut = 0;
+
+  pids.forEach(function(pid) {
+    var pidHit = !q || pid.toUpperCase().indexOf(q) !== -1;
+    var colorsHtml = '', pPcs = 0, pLow = 0, pOut = 0, nColors = 0;
+    Object.keys(inv[pid]).sort(colorNumSort).forEach(function(colorKey) {
       var cn = colorKey.replace(/^Color\s*/i, '');
-      Object.keys(inv[pid][colorKey]).forEach(function(size) {
-        rows.push({ pid: pid, cn: cn, size: size, qty: parseInt(inv[pid][colorKey][size]) || 0 });
+      var sizes = Object.keys(inv[pid][colorKey]).sort(sortSizes).filter(function(sz) {
+        return pidHit || (pid + cn + sz).toUpperCase().indexOf(q) !== -1;
       });
+      if (!sizes.length) return;
+      var cPcs = 0, chips = '';
+      sizes.forEach(function(sz) {
+        var qty = parseInt(inv[pid][colorKey][sz]) || 0, lvl = stockLevel(qty, lowMax);
+        cPcs += qty; if (lvl === 'low') pLow++; if (lvl === 'out') pOut++;
+        chips += opts.editStore
+          ? '<div class="sg-chip ' + lvl + ' edit" id="' + stockChipId(opts.editStore, pid, colorKey, sz) + '"'
+            + ' onclick="palEditRetail(\'' + palEsc(opts.editStore) + '\',\'' + palEsc(pid) + '\',\'' + palEsc(colorKey) + '\',\'' + palEsc(sz) + '\')">'
+            + '<span class="sz">' + sz + '</span><span class="q">' + qty + '</span></div>'
+          : '<div class="sg-chip ' + lvl + '"><span class="sz">' + sz + '</span><span class="q">' + qty + '</span></div>';
+      });
+      pPcs += cPcs; nColors++;
+      colorsHtml += '<div class="sg-color"><div class="sg-color-head"><span class="sg-color-name">Color ' + cn + '</span>'
+        + '<span class="sg-color-qty">' + cPcs + ' pcs</span></div><div class="sg-sizes">' + chips + '</div></div>';
     });
+    if (!nColors) return;
+    sumPcs += pPcs; sumLow += pLow; sumOut += pOut;
+    cards.push({ pid: pid, html: '<summary><span class="sg-pid">' + pid + '</span>'
+      + '<span class="sg-meta">' + nColors + ' color' + (nColors !== 1 ? 's' : '') + '</span>'
+      + (pOut ? '<span class="sg-pill out">' + pOut + ' out</span>' : '')
+      + (pLow ? '<span class="sg-pill low">' + pLow + ' low</span>' : '')
+      + '<span class="sg-total">' + pPcs + ' pcs</span></summary>' + colorsHtml });
   });
-  return rows;
+
+  if (!cards.length) {
+    return '<div class="sp-empty">' + (q ? 'No results for <strong>' + q + '</strong>' : 'No stock data found.') + '</div>';
+  }
+  var open = !!q || cards.length === 1;
+  return '<div class="sg-summary">'
+    + '<div class="sg-stat"><b>' + cards.length + '</b><span>Products</span></div>'
+    + '<div class="sg-stat"><b>' + sumPcs + '</b><span>Pieces</span></div>'
+    + '<div class="sg-stat"><b style="color:#b45309">' + sumLow + '</b><span>Low</span></div>'
+    + '<div class="sg-stat"><b style="color:#b91c1c">' + sumOut + '</b><span>Out</span></div></div>'
+    + '<div class="sg-legend"><span><i style="background:#bbf7d0"></i>In stock</span>'
+    + '<span><i style="background:#fde68a"></i>Low (' + (lowMax === 1 ? '1' : '1–' + lowMax) + ')</span>'
+    + '<span><i style="background:#fecaca"></i>Out</span>'
+    + (opts.editStore ? '<span style="margin-left:auto">Tap a box to edit</span>' : '') + '</div>'
+    + cards.map(function(c) { return '<details class="sg-card"' + (open ? ' open' : '') + '>' + c.html + '</details>'; }).join('');
 }
 
 function renderMyStock() {
   if (!SESSION_STORE) return;
-  var inv  = ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name];
-  var html = '<input type="text" class="rs-search" id="ms-search" placeholder="🔍 Search by ID, color or size…" oninput="filterMyStock(this.value)">';
-  html += '<div id="ms-list" style="border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">' + buildMyStockList(flatRows(inv), '') + '</div>';
-  document.getElementById('sp-body').innerHTML = html;
-}
-
-function buildMyStockList(rows, q) {
-  if (!rows || !rows.length) return '<div class="sp-empty">No stock data found.</div>';
-  var filtered = q ? rows.filter(function(r){
-    var combined = (r.pid + r.cn + r.size).toLowerCase();
-    return combined.indexOf(q.toLowerCase()) !== -1;
-  }) : rows;
-  if (!filtered.length) return '<div class="sp-empty">No results for "' + q + '"</div>';
-  var header = '<thead><tr style="background:#1a1a2e">'
-    + '<th style="padding:9px 12px;text-align:left;font-size:.72rem;text-transform:uppercase;color:#9ca3af;font-weight:700;letter-spacing:.05em">ID</th>'
-    + '<th style="padding:9px 10px;text-align:center;font-size:.72rem;text-transform:uppercase;color:#9ca3af;font-weight:700;letter-spacing:.05em">Color</th>'
-    + '<th style="padding:9px 10px;text-align:center;font-size:.72rem;text-transform:uppercase;color:#9ca3af;font-weight:700;letter-spacing:.05em">Size</th>'
-    + '<th style="padding:9px 12px;text-align:center;font-size:.72rem;text-transform:uppercase;color:#9ca3af;font-weight:700;letter-spacing:.05em">Qty</th>'
-    + '</tr></thead>';
-  var body = '<tbody>' + filtered.map(function(r) {
-    var cls = myStockBadge(r.qty);
-    return '<tr style="border-bottom:1px solid #f0f2f5">'
-      + '<td style="padding:9px 12px;font-size:.88rem;font-weight:700;color:#1a1a2e;font-family:monospace">' + r.pid + '</td>'
-      + '<td style="padding:9px 10px;text-align:center;font-size:.88rem;color:#555">' + r.cn + '</td>'
-      + '<td style="padding:9px 10px;text-align:center;font-size:.88rem;color:#555">' + r.size + '</td>'
-      + '<td style="padding:9px 12px;text-align:center"><span class="rs-badge ' + cls + '">' + r.qty + '</span></td>'
-      + '</tr>';
-  }).join('') + '</tbody>';
-  return '<table style="width:100%;border-collapse:collapse">' + header + body + '</table>';
+  document.getElementById('sp-body').innerHTML =
+    '<input type="text" class="rs-search" id="ms-search" placeholder="🔍 Search ID or full code (e.g. T8028848)…" autocomplete="off" autocapitalize="characters" oninput="filterMyStock(this.value)">'
+    + '<div id="ms-list">' + stockGroupsHtml(ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name], '', { lowMax: 1 }) + '</div>';
 }
 
 function filterMyStock(q) {
   var inv = ALL_RETAIL_STOCK && SESSION_STORE && ALL_RETAIL_STOCK[SESSION_STORE.name];
-  document.getElementById('ms-list').innerHTML = buildMyStockList(flatRows(inv), q);
+  document.getElementById('ms-list').innerHTML = stockGroupsHtml(inv, q, { lowMax: 1 });
 }
 
 // ── SELL TAB ──────────────────────────────────────────────────────
@@ -1682,95 +1739,54 @@ function palShowStock() {
     .getInventory();
 }
 
-function palStockSearchHtml(){
-  return '<div style="position:relative;margin-bottom:12px">'
-    +'<input type="text" id="pal-ss" placeholder="🔍 Search product ID…" oninput="palSearchStock(this.value)"'
-    +' style="width:100%;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:.93rem;font-family:inherit">'
-    +'<div id="pal-ss-res" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:2px solid #4f46e5;border-top:none;border-radius:0 0 10px 10px;max-height:200px;overflow-y:auto;z-index:99;box-shadow:0 6px 16px rgba(0,0,0,.12)"></div></div>';
+function palStockSearchHtml(cat){
+  return '<input type="text" id="pal-ss" class="rs-search" placeholder="🔍 Search ID or full code (e.g. T8028848)…" autocomplete="off" autocapitalize="characters"'
+    +' oninput="palStockFilter(this.value,\''+palEsc(cat||'')+'\')">';
 }
 
-function palSearchStock(q){
-  var res=document.getElementById('pal-ss-res'); if(!res||!STOCK_DATA) return;
-  q=q.trim().toLowerCase(); if(!q){ res.style.display='none'; return; }
-  var m=Object.keys(STOCK_DATA.inventory).filter(function(p){ return p.toLowerCase().indexOf(q)!==-1; });
-  if(!m.length){ res.innerHTML='<div style="padding:10px 14px;color:#aaa;font-size:.88rem">No products found</div>'; res.style.display='block'; return; }
-  res.innerHTML=m.map(function(pid){
-    var cat=''; STOCK_DATA.groups.forEach(function(g){ if(g.products.indexOf(pid)!==-1) cat=g.label; });
-    return '<div onclick="palSelectStock(\''+palEsc(pid)+'\',\''+palEsc(cat)+'\')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f0f2f5;font-size:.9rem" onmouseover="this.style.background=\'#f5f3ff\'" onmouseout="this.style.background=\'#fff\'">'
-      +'<strong style="color:#1a1a2e">'+pid+'</strong><span style="color:#888;font-size:.78rem;margin-left:8px">'+cat+'</span></div>';
-  }).join('');
-  res.style.display='block';
+function palStockInv(cat){
+  var inv=STOCK_DATA.inventory; if(!cat) return inv;
+  var g=STOCK_DATA.groups.find(function(x){ return x.label===cat; }), out={};
+  (g?g.products:[]).forEach(function(p){ if(inv[p]) out[p]=inv[p]; });
+  return out;
 }
 
-function palSelectStock(pid,cat){
-  var r=document.getElementById('pal-ss-res'); if(r) r.style.display='none';
-  var i=document.getElementById('pal-ss'); if(i) i.value=pid;
-  palRenderStockDetail(pid,cat);
+function palStockFilter(q,cat){
+  var body=document.getElementById('pal-stock-body'); if(!body||!STOCK_DATA) return;
+  if(!String(q||'').trim()&&!cat){ body.innerHTML=palCatGridHtml(); return; }
+  body.innerHTML=stockGroupsHtml(palStockInv(cat),q,{lowMax:3});
 }
 
-function palRenderStockCats(){
-  if(!STOCK_DATA) return;
-  var el=document.getElementById('stores-content');
-  var html='<div style="font-size:.78rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">📦 Wholesale Stock</div>'
-    +palStockSearchHtml()
-    +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">';
+function palCatGridHtml(){
+  var html='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">';
   STOCK_DATA.groups.forEach(function(g){
-    var tot=0,inS=0;
-    g.products.forEach(function(pid){ var p=STOCK_DATA.inventory[pid]; if(!p) return; Object.keys(p).forEach(function(c){ Object.keys(p[c]).forEach(function(s){ tot++; if((p[c][s]||0)>0) inS++; }); }); });
+    var tot=0,inS=0,pcs=0;
+    g.products.forEach(function(pid){ var p=STOCK_DATA.inventory[pid]; if(!p) return; Object.keys(p).forEach(function(c){ Object.keys(p[c]).forEach(function(s){ var q=parseInt(p[c][s])||0; tot++; pcs+=q; if(q>0) inS++; }); }); });
     var pct=tot>0?Math.round(inS/tot*100):0, em=pct===0?'🔴':pct<40?'🟡':'🟢';
     html+='<div style="background:#fff;border-radius:12px;padding:14px 12px;cursor:pointer;box-shadow:0 1px 6px rgba(0,0,0,.07);text-align:center" onclick="palRenderStockProds(\''+palEsc(g.label)+'\')">'
       +'<div style="font-size:1.5rem;margin-bottom:5px">'+em+'</div>'
       +'<div style="font-weight:700;color:#1a1a2e;font-size:.85rem;margin-bottom:3px">'+g.label+'</div>'
-      +'<div style="font-size:.73rem;color:#888">'+inS+'/'+tot+' in stock</div></div>';
+      +'<div style="font-size:.73rem;color:#888">'+g.products.length+' product'+(g.products.length!==1?'s':'')+' · '+pcs+' pcs</div></div>';
   });
-  html+='</div>';
-  el.innerHTML=html;
+  return html+'</div>';
+}
+
+function palRenderStockCats(){
+  if(!STOCK_DATA) return;
+  document.getElementById('stores-content').innerHTML=
+    '<div style="font-size:.78rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">📦 Palladium Stock</div>'
+    +palStockSearchHtml('')
+    +'<div id="pal-stock-body">'+palCatGridHtml()+'</div>';
 }
 
 function palRenderStockProds(catLabel){
-  var group=STOCK_DATA.groups.find(function(g){ return g.label===catLabel; }); if(!group) return;
-  var el=document.getElementById('stores-content');
-  var html='<div style="font-size:.82rem;color:#888;margin-bottom:10px">'
+  if(!STOCK_DATA) return;
+  document.getElementById('stores-content').innerHTML=
+    '<div style="font-size:.82rem;color:#888;margin-bottom:10px">'
     +'<span style="color:#4f46e5;cursor:pointer;font-weight:600" onclick="palRenderStockCats()">📦 Stock</span>'
-    +' › '+catLabel+'</div>'+palStockSearchHtml();
-  group.products.forEach(function(pid){
-    var p=STOCK_DATA.inventory[pid]; if(!p) return;
-    var tot=0,inS=0; Object.keys(p).forEach(function(c){ Object.keys(p[c]).forEach(function(s){ tot++; if((p[c][s]||0)>0) inS++; }); });
-    var bc=inS===0?'background:#fee2e2;color:#991b1b':inS<tot*.3?'background:#fef9c3;color:#92400e':'background:#dcfce7;color:#15803d';
-    html+='<div style="background:#fff;border-radius:10px;padding:11px 14px;cursor:pointer;box-shadow:0 1px 5px rgba(0,0,0,.06);display:flex;align-items:center;justify-content:space-between;margin-bottom:7px" onclick="palRenderStockDetail(\''+palEsc(pid)+'\',\''+palEsc(catLabel)+'\')">'
-      +'<div><strong style="color:#1a1a2e">'+pid+'</strong><div style="font-size:.76rem;color:#888;margin-top:1px">'+catLabel+'</div></div>'
-      +'<div style="display:flex;align-items:center;gap:8px"><span style="padding:3px 10px;border-radius:10px;font-size:.76rem;font-weight:700;'+bc+'">'+inS+'/'+tot+'</span><span style="color:#bbb">›</span></div>'
-      +'</div>';
-  });
-  el.innerHTML=html;
-}
-
-function palRenderStockDetail(pid,catLabel){
-  var prod=STOCK_DATA.inventory[pid]; if(!prod) return;
-  var el=document.getElementById('stores-content');
-  var html='<div style="font-size:.82rem;color:#888;margin-bottom:10px">'
-    +'<span style="color:#4f46e5;cursor:pointer;font-weight:600" onclick="palRenderStockCats()">📦 Stock</span>'
-    +' › <span style="color:#4f46e5;cursor:pointer;font-weight:600" onclick="palRenderStockProds(\''+palEsc(catLabel)+'\')">'+catLabel+'</span>'
-    +' › <strong style="color:#1a1a2e">'+pid+'</strong></div>'+palStockSearchHtml();
-  Object.keys(prod).forEach(function(color){
-    var sizes=prod[color],sks=Object.keys(sizes);
-    var tot=sks.reduce(function(s,k){ return s+(parseInt(sizes[k])||0); },0);
-    var inS=sks.filter(function(k){ return (parseInt(sizes[k])||0)>0; }).length;
-    html+='<div style="background:#fff;border-radius:10px;overflow:hidden;margin-bottom:9px;box-shadow:0 1px 5px rgba(0,0,0,.06)">'
-      +'<div style="padding:9px 14px;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between">'
-      +'<strong style="color:#1a1a2e">'+color+'</strong><span style="font-size:.76rem;color:#888">'+inS+' sizes · '+tot+' pcs</span></div>'
-      +'<table style="width:100%;border-collapse:collapse;font-size:.83rem"><thead><tr style="background:#f8fafc">'
-      +'<th style="padding:7px 14px;text-align:left;font-size:.7rem;text-transform:uppercase;color:#888">Size</th>'
-      +'<th style="padding:7px 14px;text-align:left;font-size:.7rem;text-transform:uppercase;color:#888">Stock</th>'
-      +'<th style="padding:7px 14px;text-align:left;font-size:.7rem;text-transform:uppercase;color:#888">Status</th>'
-      +'</tr></thead><tbody>';
-    sks.forEach(function(size){
-      var qty=parseInt(sizes[size])||0, cls=qty===0?'rs-out':qty<=3?'rs-low':'rs-ok', lbl=qty===0?'Out of Stock':qty<=3?'Low Stock':'In Stock';
-      html+='<tr style="border-bottom:1px solid #f0f2f5"><td style="padding:8px 14px;font-weight:600;color:#1a1a2e">'+size+'</td><td style="padding:8px 14px;color:#555">'+qty+' pcs</td><td style="padding:8px 14px"><span class="rs-badge '+cls+'">'+lbl+'</span></td></tr>';
-    });
-    html+='</tbody></table></div>';
-  });
-  el.innerHTML=html;
+    +' › <strong style="color:#1a1a2e">'+catLabel+'</strong></div>'
+    +palStockSearchHtml(catLabel)
+    +'<div id="pal-stock-body">'+stockGroupsHtml(palStockInv(catLabel),'',{lowMax:3})+'</div>';
 }
 
 // ── RETAIL STOCK (Palladium can view & edit all 3 stores) ─────────
@@ -1800,7 +1816,7 @@ function palRenderRetailView(){
   }).join('');
   el.innerHTML='<div style="display:flex;gap:7px;margin-bottom:12px">'+tabs+'</div>'
     +'<div style="display:flex;gap:8px;margin-bottom:12px">'
-    +'<input type="text" id="pal-retail-search" placeholder="Search products…" oninput="palFilterRetail(this.value)" style="flex:1;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:.9rem">'
+    +'<input type="text" id="pal-retail-search" placeholder="🔍 Search ID or full code…" autocomplete="off" autocapitalize="characters" oninput="palFilterRetail(this.value)" style="flex:1;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:.9rem">'
     +'<button onclick="palShowAddItemForm()" style="padding:10px 14px;background:#7c3aed;color:#fff;border:none;border-radius:10px;font-weight:700;font-size:.9rem;cursor:pointer;white-space:nowrap">+ Add</button>'
     +'</div>'
     +'<div id="pal-add-item-form" style="display:none;background:#f5f3ff;border:2px solid #7c3aed;border-radius:12px;padding:14px;margin-bottom:12px">'
@@ -1826,53 +1842,37 @@ function palFilterRetail(q){ var el=document.getElementById('pal-retail-list'); 
 function palBuildRetailList(storeName,q){
   var inv=ALL_RETAIL_STOCK&&ALL_RETAIL_STOCK[storeName];
   if(!inv) return '<div class="sp-empty">No data.</div>';
-  var pids=Object.keys(inv);
-  if(q) pids=pids.filter(function(p){ return p.toLowerCase().indexOf(q.toLowerCase())!==-1; });
-  if(!pids.length) return '<div class="sp-empty">No products found.</div>';
-  return pids.map(function(pid){
-    var colors=inv[pid];
-    var colorHtml=Object.keys(colors).map(function(cn){
-      var sizes=colors[cn];
-      var pills=Object.keys(sizes).map(function(sz){
-        var qty=parseInt(sizes[sz])||0;
-        var cid='prrs-'+storeName.replace(/\s/g,'')+'-'+pid+'-'+cn+'-'+sz;
-        var badge=qty===0?'background:#fee2e2;color:#991b1b':qty<=3?'background:#fef9c3;color:#92400e':'background:#dcfce7;color:#15803d';
-        return '<span id="'+cid+'" onclick="palEditRetail(\''+palEsc(pid)+'\',\''+palEsc(cn)+'\',\''+palEsc(sz)+'\',\''+cid+'\',\''+palEsc(storeName)+'\')" style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:8px;font-size:.77rem;font-weight:600;'+badge+';cursor:pointer">'+sz+': '+qty+'</span>';
-      }).join('');
-      return '<div style="margin-bottom:5px"><div style="font-size:.76rem;color:#888;margin-bottom:3px">Color '+cn+'</div><div style="display:flex;flex-wrap:wrap;gap:5px">'+pills+'</div></div>';
-    }).join('');
-    return '<div style="background:#fff;border-radius:10px;margin-bottom:7px;padding:11px 13px;box-shadow:0 1px 4px rgba(0,0,0,.06)">'
-      +'<div style="font-weight:700;color:#1a1a2e;font-family:monospace;font-size:.9rem;margin-bottom:7px">'+pid+'</div>'
-      +colorHtml+'</div>';
-  }).join('');
+  return stockGroupsHtml(inv,q,{lowMax:1,editStore:storeName});
 }
 
-function palEditRetail(pid,cn,sz,cid,storeName){
-  var qty=(ALL_RETAIL_STOCK&&ALL_RETAIL_STOCK[storeName]&&ALL_RETAIL_STOCK[storeName][pid]&&ALL_RETAIL_STOCK[storeName][pid][cn]&&ALL_RETAIL_STOCK[storeName][pid][cn][sz])||0;
-  var cell=document.getElementById(cid); if(!cell) return;
-  cell.innerHTML=sz+': <input id="pin-'+cid+'" type="number" min="0" value="'+parseInt(qty)+'" style="width:48px;border:1px solid #7c3aed;border-radius:5px;padding:2px 4px;font-size:.77rem" onclick="event.stopPropagation()">'
-    +' <button onclick="palSaveRetail(\''+palEsc(cid)+'\',\''+palEsc(pid)+'\',\''+palEsc(cn)+'\',\''+palEsc(sz)+'\',\''+palEsc(storeName)+'\')" style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:2px 7px;cursor:pointer;font-size:.74rem">Save</button>'
-    +' <button onclick="palCancelRetail(\''+palEsc(cid)+'\',\''+palEsc(pid)+'\',\''+palEsc(cn)+'\',\''+palEsc(sz)+'\',\''+palEsc(storeName)+'\')" style="background:#e5e7eb;color:#333;border:none;border-radius:5px;padding:2px 6px;cursor:pointer;font-size:.74rem">✕</button>';
-  cell.style.background='#ede9fe'; cell.style.color='#1a1a2e';
+// Re-render the list but keep the same product cards open
+function palRefreshRetailList(){
+  var list=document.getElementById('pal-retail-list'); if(!list) return;
+  var open={}; list.querySelectorAll('details[open] .sg-pid').forEach(function(e){ open[e.textContent]=1; });
+  var s=document.getElementById('pal-retail-search');
+  list.innerHTML=palBuildRetailList(PAL_RETAIL_TAB,s?s.value:'');
+  list.querySelectorAll('details').forEach(function(d){ var p=d.querySelector('.sg-pid'); if(p&&open[p.textContent]) d.open=true; });
 }
 
-function palSaveRetail(cid,pid,cn,sz,storeName){
-  var inp=document.getElementById('pin-'+cid); if(!inp) return;
-  var newQty=parseInt(inp.value); if(isNaN(newQty)||newQty<0) return;
-  var cell=document.getElementById(cid); if(cell) cell.innerHTML=sz+': saving…';
+function palEditRetail(storeName,pid,colorKey,sz){
+  var sizes=ALL_RETAIL_STOCK&&ALL_RETAIL_STOCK[storeName]&&ALL_RETAIL_STOCK[storeName][pid]&&ALL_RETAIL_STOCK[storeName][pid][colorKey];
+  if(!sizes) return;
+  var cur=parseInt(sizes[sz])||0;
+  var ans=prompt(storeName+'\n'+pid+' · '+colorKey+' · Size '+sz+'\n\nNew quantity:',cur);
+  if(ans===null) return;
+  var newQty=parseInt(ans,10);
+  if(isNaN(newQty)||newQty<0){ showToast('Enter a number, 0 or more'); return; }
+  if(newQty===cur) return;
+  var chip=document.getElementById(stockChipId(storeName,pid,colorKey,sz));
+  if(chip){ chip.style.opacity='.5'; chip.querySelector('.q').textContent='…'; }
   google.script.run
     .withSuccessHandler(function(r){
-      if(r&&r.success){
-        if(!ALL_RETAIL_STOCK[storeName][pid]) ALL_RETAIL_STOCK[storeName][pid]={};
-        if(!ALL_RETAIL_STOCK[storeName][pid][cn]) ALL_RETAIL_STOCK[storeName][pid][cn]={};
-        ALL_RETAIL_STOCK[storeName][pid][cn][sz]=newQty;
-        var badge=newQty===0?'background:#fee2e2;color:#991b1b':newQty<=3?'background:#fef9c3;color:#92400e':'background:#dcfce7;color:#15803d';
-        var c2=document.getElementById(cid);
-        if(c2){ c2.style.cssText='display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:8px;font-size:.77rem;font-weight:600;'+badge+';cursor:pointer'; c2.innerHTML=sz+': '+newQty; c2.onclick=function(){ palEditRetail(pid,cn,sz,cid,storeName); }; }
-      } else { alert('Error: '+(r&&r.error||'Unknown')); palCancelRetail(cid,pid,cn,sz,storeName); }
+      if(r&&r.success){ sizes[sz]=newQty; showToast('✓ '+pid+' '+colorKey+' size '+sz+' → '+newQty); }
+      else showToast('❌ '+(r&&r.error||'Save failed'));
+      palRefreshRetailList();
     })
-    .withFailureHandler(function(){ alert('Save failed.'); palCancelRetail(cid,pid,cn,sz,storeName); })
-    .updateRetailStockQty(storeName,SESSION_STORE.pass,pid,cn,sz,newQty);
+    .withFailureHandler(function(){ showToast('❌ Connection error — not saved'); palRefreshRetailList(); })
+    .updateRetailStockQty(storeName,SESSION_STORE.pass,pid,colorKey.replace(/^Color\s*/i,''),sz,newQty);
 }
 
 function palShowAddItemForm(){ var f=document.getElementById('pal-add-item-form'); if(f){ f.style.display='block'; document.getElementById('pai-pid').focus(); } }
@@ -1893,28 +1893,20 @@ function palSaveAddItem(){
         if(!ALL_RETAIL_STOCK) ALL_RETAIL_STOCK={};
         if(!ALL_RETAIL_STOCK[PAL_RETAIL_TAB]) ALL_RETAIL_STOCK[PAL_RETAIL_TAB]={};
         if(!ALL_RETAIL_STOCK[PAL_RETAIL_TAB][pid]) ALL_RETAIL_STOCK[PAL_RETAIL_TAB][pid]={};
-        if(!ALL_RETAIL_STOCK[PAL_RETAIL_TAB][pid][color]) ALL_RETAIL_STOCK[PAL_RETAIL_TAB][pid][color]={};
-        ALL_RETAIL_STOCK[PAL_RETAIL_TAB][pid][color][size]=qty;
+        var ck='Color '+color.replace(/^Color\s*/i,'');
+        if(!ALL_RETAIL_STOCK[PAL_RETAIL_TAB][pid][ck]) ALL_RETAIL_STOCK[PAL_RETAIL_TAB][pid][ck]={};
+        ALL_RETAIL_STOCK[PAL_RETAIL_TAB][pid][ck][size]=qty;
         palHideAddItemForm();
         document.getElementById('pai-pid').value='';
         document.getElementById('pai-cat').value='';
         document.getElementById('pai-color').value='';
         document.getElementById('pai-size').value='';
         document.getElementById('pai-qty').value='';
-        var q=document.getElementById('pal-retail-search'); var sv=q?q.value:'';
-        document.getElementById('pal-retail-list').innerHTML=palBuildRetailList(PAL_RETAIL_TAB,sv);
+        palRefreshRetailList();
       } else { msg.style.color='#b91c1c'; msg.textContent='❌ '+(r&&r.error||'Error'); }
     })
     .withFailureHandler(function(){ msg.style.color='#b91c1c'; msg.textContent='❌ Connection error.'; })
     .addRetailStockItem(PAL_RETAIL_TAB,SESSION_STORE.pass,pid,cat,color,size,qty);
-}
-
-function palCancelRetail(cid,pid,cn,sz,storeName){
-  var qty=(ALL_RETAIL_STOCK&&ALL_RETAIL_STOCK[storeName]&&ALL_RETAIL_STOCK[storeName][pid]&&ALL_RETAIL_STOCK[storeName][pid][cn]&&ALL_RETAIL_STOCK[storeName][pid][cn][sz])||0;
-  qty=parseInt(qty)||0;
-  var badge=qty===0?'background:#fee2e2;color:#991b1b':qty<=3?'background:#fef9c3;color:#92400e':'background:#dcfce7;color:#15803d';
-  var cell=document.getElementById(cid);
-  if(cell){ cell.style.cssText='display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:8px;font-size:.77rem;font-weight:600;'+badge+';cursor:pointer'; cell.innerHTML=sz+': '+qty; cell.onclick=function(){ palEditRetail(pid,cn,sz,cid,storeName); }; }
 }
 
 // ── PALLADIUM PURCHASE PLAN ───────────────────────────────────────
