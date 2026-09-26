@@ -208,6 +208,8 @@ tbody tr:last-child td{border-bottom:none}
 .sg-chip.ok{background:#ecfdf5;border-color:#bbf7d0;color:#15803d}
 .sg-chip.low{background:#fffbeb;border-color:#fde68a;color:#b45309}
 .sg-chip.out{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+.sg-section{font-size:.72rem;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin:14px 2px 7px}
+.sg-section span{background:#e2e8f0;color:#475569;border-radius:8px;padding:1px 7px;margin-left:4px;font-size:.68rem}
 .sg-chip.edit{cursor:pointer}
 .sg-chip.edit:active{transform:scale(.95)}
 
@@ -807,7 +809,7 @@ function stockGroupsHtml(inv, q, opts) {
           : '<div class="sg-chip ' + lvl + '"><span class="sz">' + sz + '</span><span class="q">' + qty + '</span></div>';
       });
       pPcs += cPcs; nColors++;
-      colorsHtml += '<div class="sg-color"><div class="sg-color-head"><span class="sg-color-name">Color ' + cn + '</span>'
+      colorsHtml += '<div class="sg-color"><div class="sg-color-head"><span class="sg-color-name">' + (/^\d+$/.test(cn) ? 'Color ' + cn : cn) + '</span>'
         + '<span class="sg-color-qty">' + cPcs + ' pcs</span></div><div class="sg-sizes">' + chips + '</div></div>';
     });
     if (!nColors) return;
@@ -823,6 +825,22 @@ function stockGroupsHtml(inv, q, opts) {
     return '<div class="sp-empty">' + (q ? 'No results for <strong>' + q + '</strong>' : 'No stock data found.') + '</div>';
   }
   var open = !!q || cards.length === 1;
+  var cardHtml = function(c) { return '<details class="sg-card"' + (open ? ' open' : '') + '>' + c.html + '</details>'; };
+  var body;
+  if (opts.sections) {
+    // Category headings, in the order given; anything not in a section goes last
+    var byPid = {}, used = {};
+    cards.forEach(function(c) { byPid[c.pid] = c; });
+    body = opts.sections.map(function(sec) {
+      var sc = sec.products.filter(function(p) { return byPid[p] && !used[p]; }).map(function(p) { used[p] = 1; return byPid[p]; });
+      if (!sc.length) return '';
+      return '<div class="sg-section">' + sec.label + ' <span>' + sc.length + '</span></div>' + sc.map(cardHtml).join('');
+    }).join('');
+    var rest = cards.filter(function(c) { return !used[c.pid]; });
+    if (rest.length) body += '<div class="sg-section">Other <span>' + rest.length + '</span></div>' + rest.map(cardHtml).join('');
+  } else {
+    body = cards.map(cardHtml).join('');
+  }
   return '<div class="sg-summary">'
     + '<div class="sg-stat"><b>' + cards.length + '</b><span>Products</span></div>'
     + '<div class="sg-stat"><b>' + sumPcs + '</b><span>Pieces</span></div>'
@@ -832,7 +850,7 @@ function stockGroupsHtml(inv, q, opts) {
     + '<span><i style="background:#fde68a"></i>Low (' + (lowMax === 1 ? '1' : '1–' + lowMax) + ')</span>'
     + '<span><i style="background:#fecaca"></i>Out</span>'
     + (opts.editStore ? '<span style="margin-left:auto">Tap a box to edit</span>' : '') + '</div>'
-    + cards.map(function(c) { return '<details class="sg-card"' + (open ? ' open' : '') + '>' + c.html + '</details>'; }).join('');
+    + body;
 }
 
 // Palladium's inventory = the reference size range for every product
@@ -1960,54 +1978,21 @@ function palShowStock() {
     .getInventory();
 }
 
-function palStockSearchHtml(cat){
-  return '<input type="text" id="pal-ss" class="rs-search" placeholder="🔍 Search ID or full code (e.g. T8028848)…" autocomplete="off" autocapitalize="characters"'
-    +' oninput="palStockFilter(this.value,\''+palEsc(cat||'')+'\')">';
+function palStockHtml(q){
+  return stockGroupsHtml(STOCK_DATA.inventory,q,{lowMax:3,sections:STOCK_DATA.groups});
 }
 
-function palStockInv(cat){
-  var inv=STOCK_DATA.inventory; if(!cat) return inv;
-  var g=STOCK_DATA.groups.find(function(x){ return x.label===cat; }), out={};
-  (g?g.products:[]).forEach(function(p){ if(inv[p]) out[p]=inv[p]; });
-  return out;
-}
-
-function palStockFilter(q,cat){
+function palStockFilter(q){
   var body=document.getElementById('pal-stock-body'); if(!body||!STOCK_DATA) return;
-  if(!String(q||'').trim()&&!cat){ body.innerHTML=palCatGridHtml(); return; }
-  body.innerHTML=stockGroupsHtml(palStockInv(cat),q,{lowMax:3});
-}
-
-function palCatGridHtml(){
-  var html='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">';
-  STOCK_DATA.groups.forEach(function(g){
-    var tot=0,inS=0,pcs=0;
-    g.products.forEach(function(pid){ var p=STOCK_DATA.inventory[pid]; if(!p) return; Object.keys(p).forEach(function(c){ Object.keys(p[c]).forEach(function(s){ var q=parseInt(p[c][s])||0; tot++; pcs+=q; if(q>0) inS++; }); }); });
-    var pct=tot>0?Math.round(inS/tot*100):0, em=pct===0?'🔴':pct<40?'🟡':'🟢';
-    html+='<div style="background:#fff;border-radius:12px;padding:14px 12px;cursor:pointer;box-shadow:0 1px 6px rgba(0,0,0,.07);text-align:center" onclick="palRenderStockProds(\''+palEsc(g.label)+'\')">'
-      +'<div style="font-size:1.5rem;margin-bottom:5px">'+em+'</div>'
-      +'<div style="font-weight:700;color:#1a1a2e;font-size:.85rem;margin-bottom:3px">'+g.label+'</div>'
-      +'<div style="font-size:.73rem;color:#888">'+g.products.length+' product'+(g.products.length!==1?'s':'')+' · '+pcs+' pcs</div></div>';
-  });
-  return html+'</div>';
+  body.innerHTML=palStockHtml(q);
 }
 
 function palRenderStockCats(){
   if(!STOCK_DATA) return;
   document.getElementById('stores-content').innerHTML=
     '<div style="font-size:.78rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">📦 Palladium Stock</div>'
-    +palStockSearchHtml('')
-    +'<div id="pal-stock-body">'+palCatGridHtml()+'</div>';
-}
-
-function palRenderStockProds(catLabel){
-  if(!STOCK_DATA) return;
-  document.getElementById('stores-content').innerHTML=
-    '<div style="font-size:.82rem;color:#888;margin-bottom:10px">'
-    +'<span style="color:#4f46e5;cursor:pointer;font-weight:600" onclick="palRenderStockCats()">📦 Stock</span>'
-    +' › <strong style="color:#1a1a2e">'+catLabel+'</strong></div>'
-    +palStockSearchHtml(catLabel)
-    +'<div id="pal-stock-body">'+stockGroupsHtml(palStockInv(catLabel),'',{lowMax:3})+'</div>';
+    +'<input type="text" id="pal-ss" class="rs-search" placeholder="🔍 Search ID or full code (e.g. T8028848)…" autocomplete="off" autocapitalize="characters" oninput="palStockFilter(this.value)">'
+    +'<div id="pal-stock-body">'+palStockHtml('')+'</div>';
 }
 
 // ── RETAIL STOCK (Palladium can view & edit all 3 stores) ─────────
