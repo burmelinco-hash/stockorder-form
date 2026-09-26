@@ -782,9 +782,15 @@ function stockGroupsHtml(inv, q, opts) {
   pids.forEach(function(pid) {
     var pidHit = !q || pid.toUpperCase().indexOf(q) !== -1;
     var colorsHtml = '', pPcs = 0, pLow = 0, pOut = 0, nColors = 0;
+    // Every color shows the product's full size range (Palladium's + this store's), missing sizes as 0
+    var sizeSet = {};
+    [inv[pid], opts.refInv && opts.refInv[pid]].forEach(function(p) {
+      if (p) Object.keys(p).forEach(function(c) { Object.keys(p[c]).forEach(function(s) { sizeSet[s] = 1; }); });
+    });
+    var sizeList = Object.keys(sizeSet).sort(sortSizes);
     Object.keys(inv[pid]).sort(colorNumSort).forEach(function(colorKey) {
       var cn = colorKey.replace(/^Color\s*/i, '');
-      var sizes = Object.keys(inv[pid][colorKey]).sort(sortSizes).filter(function(sz) {
+      var sizes = sizeList.filter(function(sz) {
         return pidHit || (pid + cn + sz).toUpperCase().indexOf(q) !== -1;
       });
       if (!sizes.length) return;
@@ -827,16 +833,47 @@ function stockGroupsHtml(inv, q, opts) {
     + cards.map(function(c) { return '<details class="sg-card"' + (open ? ' open' : '') + '>' + c.html + '</details>'; }).join('');
 }
 
+// Palladium's inventory = the reference size range for every product
+function palRefInv() { return (STOCK_DATA && STOCK_DATA.inventory) || (INVENTORY_LOADED && INVENTORY) || null; }
+
+var PAL_REF_LOADING = false;
+function ensurePalRef(onReady) {
+  if (palRefInv() || PAL_REF_LOADING) return;
+  PAL_REF_LOADING = true;
+  google.script.run
+    .withSuccessHandler(function(r) {
+      PAL_REF_LOADING = false;
+      if (r && r.success) { INVENTORY = r.inventory; GROUPS = r.groups; INVENTORY_LOADED = true; onReady(); }
+    })
+    .withFailureHandler(function() { PAL_REF_LOADING = false; })
+    .getInventory();
+}
+
+// Replace a stock list's contents without collapsing the product cards that were open
+function rerenderKeepOpen(el, html) {
+  var open = {};
+  el.querySelectorAll('details[open] .sg-pid').forEach(function(e) { open[e.textContent] = 1; });
+  el.innerHTML = html;
+  el.querySelectorAll('details').forEach(function(d) { var p = d.querySelector('.sg-pid'); if (p && open[p.textContent]) d.open = true; });
+}
+
+function myStockHtml(q) {
+  return stockGroupsHtml(ALL_RETAIL_STOCK && SESSION_STORE && ALL_RETAIL_STOCK[SESSION_STORE.name], q, { lowMax: 1, refInv: palRefInv() });
+}
+
 function renderMyStock() {
   if (!SESSION_STORE) return;
   document.getElementById('sp-body').innerHTML =
     '<input type="text" class="rs-search" id="ms-search" placeholder="🔍 Search ID or full code (e.g. T8028848)…" autocomplete="off" autocapitalize="characters" oninput="filterMyStock(this.value)">'
-    + '<div id="ms-list">' + stockGroupsHtml(ALL_RETAIL_STOCK && ALL_RETAIL_STOCK[SESSION_STORE.name], '', { lowMax: 1 }) + '</div>';
+    + '<div id="ms-list">' + myStockHtml('') + '</div>';
+  ensurePalRef(function() {
+    var el = document.getElementById('ms-list'), s = document.getElementById('ms-search');
+    if (el && CURRENT_TAB === 'mystock') rerenderKeepOpen(el, myStockHtml(s ? s.value : ''));
+  });
 }
 
 function filterMyStock(q) {
-  var inv = ALL_RETAIL_STOCK && SESSION_STORE && ALL_RETAIL_STOCK[SESSION_STORE.name];
-  document.getElementById('ms-list').innerHTML = stockGroupsHtml(inv, q, { lowMax: 1 });
+  document.getElementById('ms-list').innerHTML = myStockHtml(q);
 }
 
 // ── SELL TAB ──────────────────────────────────────────────────────
@@ -1842,16 +1879,20 @@ function palFilterRetail(q){ var el=document.getElementById('pal-retail-list'); 
 function palBuildRetailList(storeName,q){
   var inv=ALL_RETAIL_STOCK&&ALL_RETAIL_STOCK[storeName];
   if(!inv) return '<div class="sp-empty">No data.</div>';
-  return stockGroupsHtml(inv,q,{lowMax:1,editStore:storeName});
+  ensurePalRef(palRefreshRetailList);
+  return stockGroupsHtml(inv,q,{lowMax:1,editStore:storeName,refInv:palRefInv()});
 }
 
-// Re-render the list but keep the same product cards open
 function palRefreshRetailList(){
   var list=document.getElementById('pal-retail-list'); if(!list) return;
-  var open={}; list.querySelectorAll('details[open] .sg-pid').forEach(function(e){ open[e.textContent]=1; });
   var s=document.getElementById('pal-retail-search');
-  list.innerHTML=palBuildRetailList(PAL_RETAIL_TAB,s?s.value:'');
-  list.querySelectorAll('details').forEach(function(d){ var p=d.querySelector('.sg-pid'); if(p&&open[p.textContent]) d.open=true; });
+  rerenderKeepOpen(list,palBuildRetailList(PAL_RETAIL_TAB,s?s.value:''));
+}
+
+function palCategoryOf(pid){
+  var gs=(STOCK_DATA&&STOCK_DATA.groups)||GROUPS||[];
+  var g=gs.find(function(x){ return x.products&&x.products.indexOf(pid)!==-1; });
+  return g?g.label:'';
 }
 
 function palEditRetail(storeName,pid,colorKey,sz){
@@ -1862,9 +1903,10 @@ function palEditRetail(storeName,pid,colorKey,sz){
   if(ans===null) return;
   var newQty=parseInt(ans,10);
   if(isNaN(newQty)||newQty<0){ showToast('Enter a number, 0 or more'); return; }
-  if(newQty===cur) return;
+  if(newQty===cur&&sizes[sz]!==undefined) return;
   var chip=document.getElementById(stockChipId(storeName,pid,colorKey,sz));
   if(chip){ chip.style.opacity='.5'; chip.querySelector('.q').textContent='…'; }
+  // add-or-update: also creates the sheet row for sizes the store never had
   google.script.run
     .withSuccessHandler(function(r){
       if(r&&r.success){ sizes[sz]=newQty; showToast('✓ '+pid+' '+colorKey+' size '+sz+' → '+newQty); }
@@ -1872,7 +1914,7 @@ function palEditRetail(storeName,pid,colorKey,sz){
       palRefreshRetailList();
     })
     .withFailureHandler(function(){ showToast('❌ Connection error — not saved'); palRefreshRetailList(); })
-    .updateRetailStockQty(storeName,SESSION_STORE.pass,pid,colorKey.replace(/^Color\s*/i,''),sz,newQty);
+    .addRetailStockItem(storeName,SESSION_STORE.pass,pid,palCategoryOf(pid),colorKey.replace(/^Color\s*/i,''),sz,newQty);
 }
 
 function palShowAddItemForm(){ var f=document.getElementById('pal-add-item-form'); if(f){ f.style.display='block'; document.getElementById('pai-pid').focus(); } }
