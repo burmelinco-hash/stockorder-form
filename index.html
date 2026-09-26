@@ -2007,7 +2007,7 @@ function palMarkDone(orderId) {
         palUpdateCounts();
         var card=document.getElementById('poc-'+orderId); if(card) card.outerHTML=palBuildOrderCard(order);
         var b=document.getElementById('pob-'+orderId); if(b) b.classList.add('open');
-        if(r.warnings&&r.warnings.length){ var m=document.getElementById('pmsg-'+orderId); if(m){m.style.color='#92400e';m.textContent='⚠ '+r.warnings.join('; ');} }
+        if(r.warnings&&r.warnings.length){ var m=document.getElementById('pmsg-'+orderId); if(m){m.style.color='#92400e';m.textContent='⚠ '+r.warnings.join('; ');} showToast('⚠ Done, with '+r.warnings.length+' warning'+(r.warnings.length>1?'s':'')+' — see the order'); }
       } else {
         if(btn){ btn.disabled=false; btn.textContent=isStore?'✔ Send to Store':'✔ Done'; }
         if(msg){ msg.style.color='#b91c1c'; msg.textContent='❌ '+r.error; }

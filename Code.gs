@@ -372,9 +372,11 @@ function markDone(orderId, password) {
         label: it.product + ' | ' + it.color + ' | ' + it.size
       };
     });
-    var warnings = (order.orderType === 'store' && order.shopName)
-      ? addItemsToStore(ss, order.shopName, lines)      // store order: add to the shop's stock
-      : deductItemsFromWholesale(ss, order.items, lines); // customer order: deduct from Size Chart
+    // Every order leaves Palladium's Size Chart; a store order also lands in that store's stock
+    var warnings = deductItemsFromWholesale(ss, order.items, lines);
+    if (order.orderType === 'store' && order.shopName) {
+      warnings = warnings.concat(addItemsToStore(ss, order.shopName, lines));
+    }
 
     // Mark as Completed — also record the invoice timestamp if not already set
     var doneAt  = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm');
@@ -553,8 +555,7 @@ function addItemsToStore(ss, shopName, lines) {
   return [];
 }
 
-// Deduct a customer order from the Size Chart in one pass; anything not found there
-// falls back to the old sheet-by-sheet search
+// Deduct an order from Palladium's Size Chart in one pass
 function deductItemsFromWholesale(ss, items, lines) {
   var warnings = [];
   var sheet = ss.getSheetByName(INVENTORY_SHEET_NAME);
@@ -569,66 +570,16 @@ function deductItemsFromWholesale(ss, items, lines) {
     var k = l.pid + '|' + l.col + '|' + l.sz;
     if (rowOf[k] !== undefined) {
       var row = rowOf[k];
-      data[row][5] = Math.max(0, (parseInt(data[row][5]) || 0) - l.qty);
+      var have = parseInt(data[row][5]) || 0;
+      if (have < l.qty) warnings.push(l.label + ': Palladium had only ' + have + ' — set to 0');
+      data[row][5] = Math.max(0, have - l.qty);
       changed[row] = true;
     } else {
-      var res = deductStock(ss, items[i]);
-      if (!res.success) warnings.push(l.label + ': ' + res.error);
+      warnings.push(l.label + ': not found in ' + INVENTORY_SHEET_NAME + ' — Palladium stock not changed');
     }
   });
   Object.keys(changed).forEach(function(row) { sheet.getRange(Number(row) + 1, 6).setValue(data[row][5]); });
   return warnings;
-}
-
-// ─── INTERNAL: DEDUCT STOCK ───────────────────────────────────
-// Sheet columns: A=ID, B=ProductID, C=Category, D=Color, E=Size, F=Stock
-// item.lp = ProductID, item.lc = Color number, item.ls = Size
-function deductStock(ss, item) {
-  try {
-    var sheets = ss.getSheets();
-
-    for (var s = 0; s < sheets.length; s++) {
-      var sheet = sheets[s];
-      if (sheet.getName().trim() === ORDERS_TAB_NAME) continue;
-      if (sheet.getLastRow() < 2) continue;
-
-      var data = sheet.getDataRange().getValues();
-
-      // Find where data actually starts (skip title + header rows)
-      var startRow = 1;
-      for (var h = 0; h < data.length; h++) {
-        if (String(data[h][1]).trim().toLowerCase() === 'product id') {
-          startRow = h + 1; break;
-        }
-      }
-
-      for (var r = startRow; r < data.length; r++) {
-        var row = data[r];
-        var productId = String(row[1]).trim();
-        var color     = String(row[3]).trim();
-        var size      = String(row[4]).trim();
-
-        // Use lp/lc/ls (lookup fields) when available; fall back to product/color/size
-        var matchProd  = String(item.lp  || item.product || '').trim();
-        var matchColor = String(item.lc  || (item.color  || '').replace(/^Color\s*/i, '')).trim();
-        var matchSize  = String(item.ls  || item.size    || '').trim();
-
-        if (productId === matchProd &&
-            color     === matchColor &&
-            size      === matchSize) {
-          var currentStock = parseInt(row[5]) || 0;
-          var newStock     = Math.max(0, currentStock - (item.qty || 0));
-          sheet.getRange(r + 1, 6).setValue(newStock);
-          return { success: true };
-        }
-      }
-    }
-
-    return { success: false, error: 'Item not found in sheet' };
-
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
 }
 
 // ─── INTERNAL: CONFIRMATION EMAIL TO CUSTOMER ─────────────────
